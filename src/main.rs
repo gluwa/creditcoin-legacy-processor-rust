@@ -78,7 +78,7 @@ fn main() -> Result<()> {
     info!("ccprocessor-rust ({})", env!("CARGO_PKG_VERSION"));
 
     info!("ccprocessor-rust connecting to gateway {} ...", gateway);
-    let handler = handler::CCTransactionHandler::new(gateway)?;
+    let handler = handler::CCTransactionHandler::new(gateway);
 
     info!("ccprocessor-rust connecting to {} ...", endpoint);
     let mut processor = TransactionProcessor::new(endpoint);
@@ -90,3 +90,10 @@ fn main() -> Result<()> {
 
     Ok(())
 }
+
+// fn main() {
+//     let s = handler::sha512_id(&handler::compress(
+//         "04a196d6af44a78637ccf6971543f5ff604c6bb77183c70985ad3626fb2c2058779502da4ad981b6818a0e6eb2958c6424143d08bc3106b4e1d49bc8fe86a7e10f",
+//     ).unwrap().as_bytes());
+//     println!("{:?}", s)
+// }

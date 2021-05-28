@@ -2,7 +2,6 @@ use crate::{
     ext::{IntegerExt, MessageExt},
     protos,
 };
-use anyhow::{bail, Result};
 use log::{debug, info};
 use rug::{Assign, Integer};
 use sawtooth_sdk::{
@@ -102,6 +101,11 @@ macro_rules! bail_transaction {
     ($s: expr) => {
         return core::result::Result::Err(
             sawtooth_sdk::processor::handler::ApplyError::InvalidTransaction($s),
+        );
+    };
+    ($s: literal, $($t: tt),*) => {
+        return core::result::Result::Err(
+            sawtooth_sdk::processor::handler::ApplyError::InvalidTransaction(format!($s, $($t),*)),
         );
     };
 }
@@ -340,17 +344,21 @@ struct Housekeeping {
     block_idx: Integer,
 }
 
-fn get_string<'a>(map: &'a BTreeMap<Value, Value>, key: &str, name: &str) -> Result<&'a String> {
+fn get_string<'a>(
+    map: &'a BTreeMap<Value, Value>,
+    key: &str,
+    name: &str,
+) -> Result<&'a String, ApplyError> {
     match map.get(&Value::Text(key.into())) {
         Some(value) => {
             if let Value::Text(s) = value {
                 Ok(s)
             } else {
-                bail!("Value for {} was not a string, found : {:?}", name, value)
+                bail_transaction!("Value for {} was not a string, found : {:?}", name, value)
             }
         }
         None => {
-            bail!("Expecting {}", name)
+            bail_transaction!("Expecting {}", name)
         }
     }
 }
@@ -374,13 +382,26 @@ fn get_signed_integer_string<'a>(
     Integer::try_parse_signed(s)?;
     Ok(s)
 }
+
+fn get_integer(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> Result<Integer, ApplyError> {
     let str_value = get_string(map, key, name)?;
-    Ok(Integer::from_str_radix(str_value, 10)?)
+    Integer::try_parse(str_value)
 }
 
-fn get_u64(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> Result<u64> {
+fn get_signed_integer(
+    map: &BTreeMap<Value, Value>,
+    key: &str,
+    name: &str,
+) -> Result<Integer, ApplyError> {
     let str_value = get_string(map, key, name)?;
-    Ok(str_value.parse()?)
+    Integer::try_parse_signed(str_value)
+}
+
+fn get_u64(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> Result<u64, ApplyError> {
+    let str_value = get_string(map, key, name)?;
+    str_value
+        .parse()
+        .map_err(|_| InvalidTransaction("Invalid number format".into()))
 }
 
 fn to_hex_string(bytes: &[u8]) -> String {
@@ -391,7 +412,7 @@ fn to_hex_string(bytes: &[u8]) -> String {
     buf
 }
 
-fn sha512_id<B: AsRef<[u8]>>(bytes: B) -> String {
+pub fn sha512_id<B: AsRef<[u8]>>(bytes: B) -> String {
     let res = sha512(bytes);
     let ret = &res[SKIP_TO_GET_60..];
     assert_eq!(
@@ -409,7 +430,7 @@ fn sha512<B: AsRef<[u8]>>(bytes: B) -> String {
 }
 
 impl TryFrom<Value> for CCCommand {
-    type Error = anyhow::Error;
+    type Error = ApplyError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         if let Value::Map(map) = value {
@@ -567,10 +588,10 @@ impl TryFrom<Value> for CCCommand {
                     block_idx: get_integer(&map, "p1", "blockIdx")?,
                 }
                 .into(),
-                _ => bail!("Invalid verb : {:?}", verb),
+                _ => bail_transaction!("Invalid verb : {:?}", verb),
             })
         } else {
-            bail!("Expected a Map at the top level, found {:?}", value)
+            bail_transaction!("Expected a Map at the top level, found {:?}", value)
         }
     }
 }
@@ -579,7 +600,7 @@ fn is_hex(s: &str) -> bool {
     s.contains(|c: char| !(c.is_numeric() || ('a'..'f').contains(&c) || ('A'..'F').contains(&c)))
 }
 
-fn compress(uncompressed: &str) -> Result<SigHash, ApplyError> {
+pub fn compress(uncompressed: &str) -> Result<SigHash, ApplyError> {
     let marker = &uncompressed[..2];
     if uncompressed.len() == 2 * (1 + 2 * 32) && is_hex(uncompressed) && marker == "04" {
         let x = &uncompressed[2..][..(2 * 32)];
@@ -722,9 +743,7 @@ impl CCTransaction for SendFunds {
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
     ) -> Result<(), ApplyError> {
-        let my_sighash = ctx
-            .sighash(request)
-            .map_err(|e| InternalError(e.to_string()))?;
+        let my_sighash = ctx.sighash(request)?;
         if self.sighash == my_sighash {
             bail_transaction!("Invalid destination");
         }
@@ -789,7 +808,7 @@ impl CCTransaction for RegisterAddress {
         let key = string!(&self.blockchain, &addr_str_lower, &self.network);
         let id = Address::with_prefix_key(ADDR, &key);
 
-        if try_get_state_data(tx_ctx, &id)?.is_none() {
+        if try_get_state_data(tx_ctx, &id)?.is_some() {
             bail_transaction!("The address has been already registered");
         }
 
@@ -1008,10 +1027,6 @@ impl CCTransaction for AddBidOrder {
         tx_ctx.set_state_entries(states)?;
         Ok(())
     }
-}
-
-fn parse_int_err(e: impl std::error::Error) -> ApplyError {
-    InternalError(format!("Failed to parse integer : {}", e))
 }
 
 impl CCTransaction for AddOffer {
@@ -1633,6 +1648,7 @@ impl CCTransaction for CollectCoins {
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
     ) -> Result<(), ApplyError> {
+        info!("HERE");
         let id = Address::with_prefix_key(ERC20, &self.blockchain_tx_id);
         let state_data = try_get_state_data(tx_ctx, &id)?.unwrap_or_default();
 
@@ -1655,7 +1671,7 @@ impl CCTransaction for CollectCoins {
 
         verify(ctx, &gateway_command)?;
 
-        let wallet_id = string!(NAMESPACE_PREFIX.as_str(), WALLET, my_sighash.as_str());
+        let wallet_id = WalletId::from(&my_sighash);
 
         let state_data = try_get_state_data(tx_ctx, &wallet_id)?.unwrap_or_default();
         let wallet = if state_data.is_empty() {
@@ -1666,13 +1682,16 @@ impl CCTransaction for CollectCoins {
             let wallet = Wallet::try_parse(&state_data)?;
             let mut balance = Integer::try_parse(&wallet.amount)?;
             balance += &self.amount;
+            info!("New amount = {}", balance);
             protos::Wallet {
                 amount: balance.to_string(),
             }
         };
 
+        info!("Wallet id = {:?}", wallet_id);
+
         let mut states = vec![];
-        add_state(&mut states, wallet_id, &wallet)?;
+        add_state(&mut states, wallet_id.into(), &wallet)?;
         states.push((id.into(), self.amount.to_string().as_bytes().to_owned()));
 
         tx_ctx.set_state_entries(states)?;
@@ -2038,7 +2057,9 @@ struct HandlerContext {
 impl HandlerContext {
     fn sighash(&self, request: &TpProcessRequest) -> Result<SigHash, ApplyError> {
         // TODO: transitioning
-        let compressed = compress(request.get_header().get_signer_public_key())?;
+        let signer = request.get_header().get_signer_public_key();
+        info!("signer = {}", signer);
+        let compressed = compress(signer)?;
         let hash = sha512_id(compressed.as_bytes());
         Ok(SigHash(hash))
     }
@@ -2056,19 +2077,19 @@ pub struct CCTransactionHandler {
 }
 
 impl CCTransactionHandler {
-    pub fn new<S: Into<String>>(gateway: S) -> Result<Self> {
+    pub fn new<S: Into<String>>(gateway: S) -> Self {
         let gateway_endpoint: String = gateway.into();
         let context = zmq::Context::new();
 
-        Ok(Self {
+        Self {
             zmq_context: context,
             gateway_endpoint,
             settings: Settings::new(),
-        })
+        }
     }
 }
 
-fn params_from_bytes(bytes: &[u8]) -> Result<Value> {
+fn params_from_bytes(bytes: &[u8]) -> anyhow::Result<Value> {
     let res = serde_cbor::from_slice(bytes)?;
     Ok(res)
 }
@@ -2100,10 +2121,9 @@ impl TransactionHandler for CCTransactionHandler {
         request: &TpProcessRequest,
         context: &mut dyn TransactionContext,
     ) -> Result<(), ApplyError> {
-        let params =
-            params_from_bytes(&request.payload).map_err(|e| InternalError(e.to_string()))?;
-        let command =
-            CCCommand::try_from(params).map_err(|e| InvalidTransaction(format!("{}", e)))?;
+        let params = params_from_bytes(&request.payload)
+            .map_err(|e| InvalidTransaction(format!("Malformed payload : {}", e)))?;
+        let command = CCCommand::try_from(params)?;
         let sock = self
             .zmq_context
             .socket(zmq::SocketType::REQ)
