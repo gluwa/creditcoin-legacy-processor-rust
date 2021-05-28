@@ -355,7 +355,25 @@ fn get_string<'a>(map: &'a BTreeMap<Value, Value>, key: &str, name: &str) -> Res
     }
 }
 
-fn get_integer(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> Result<Integer> {
+fn get_integer_string<'a>(
+    map: &'a BTreeMap<Value, Value>,
+    key: &str,
+    name: &str,
+) -> Result<&'a String, ApplyError> {
+    let s = get_string(map, key, name)?;
+    Integer::try_parse(s)?;
+    Ok(s)
+}
+
+fn get_signed_integer_string<'a>(
+    map: &'a BTreeMap<Value, Value>,
+    key: &str,
+    name: &str,
+) -> Result<&'a String, ApplyError> {
+    let s = get_string(map, key, name)?;
+    Integer::try_parse_signed(s)?;
+    Ok(s)
+}
     let str_value = get_string(map, key, name)?;
     Ok(Integer::from_str_radix(str_value, 10)?)
 }
@@ -428,10 +446,10 @@ impl TryFrom<Value> for CCCommand {
                 }
                 "AddAskOrder" => {
                     let address_id = get_string(&map, "p1", "addressId")?.to_lowercase();
-                    let amount_str = get_string(&map, "p2", "amount")?.clone();
-                    let interest = get_string(&map, "p3", "interest")?.clone();
-                    let maturity = get_string(&map, "p4", "maturity")?.clone();
-                    let fee = get_string(&map, "p5", "fee")?.clone();
+                    let amount_str = get_integer_string(&map, "p2", "amount")?.clone();
+                    let interest = get_integer_string(&map, "p3", "interest")?.clone();
+                    let maturity = get_integer_string(&map, "p4", "maturity")?.clone();
+                    let fee = get_integer_string(&map, "p5", "fee")?.clone();
                     let expiration = get_u64(&map, "p6", "expiration")?;
                     AddAskOrder {
                         address_id,
