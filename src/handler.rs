@@ -456,10 +456,9 @@ impl TryFrom<Value> for CCCommand {
                 }
 
                 "RegisterTransfer" => {
-                    let gain = get_integer(&map, "p1", "gain")?;
-                    let order_id = get_string(&map, "p2", "order ID")?.to_lowercase();
-                    let blockchain_tx_id =
-                        get_string(&map, "p3", "blockchain tx id")?.to_lowercase();
+                    let gain = get_signed_integer(&map, "p1", "gain")?;
+                    let order_id = get_string(&map, "p2", "orderID")?.to_lowercase();
+                    let blockchain_tx_id = get_string(&map, "p3", "blockchainTxId")?.to_lowercase();
                     RegisterTransfer {
                         gain,
                         order_id,
@@ -790,11 +789,11 @@ impl CCTransaction for SendFunds {
         let state_data = try_get_state_data(tx_ctx, &*dest_wallet_id)?;
         let dest_wallet = match state_data {
             Some(state_data) => {
-                let mut wallet = Wallet::try_parse(&state_data)?;
-                let mut dest_balance = Integer::try_parse(&src_wallet.amount)?;
+                let mut dest_wallet = Wallet::try_parse(&state_data)?;
+                let mut dest_balance = Integer::try_parse(&dest_wallet.amount)?;
                 dest_balance += self.amount;
-                wallet.amount = dest_balance.to_string();
-                wallet
+                dest_wallet.amount = dest_balance.to_string();
+                dest_wallet
             }
             None => Wallet {
                 amount: self.amount.to_string(),
@@ -1098,7 +1097,7 @@ impl CCTransaction for AddOffer {
         let state_data = get_state_data(tx_ctx, &self.bid_order_id)?;
         let bid_order = crate::protos::BidOrder::try_parse(&state_data)?;
 
-        if bid_order.sighash != my_sighash.as_str() {
+        if bid_order.sighash == my_sighash.as_str() {
             bail_transaction!("The ask and bid orders are from the same party");
         }
 
@@ -1522,11 +1521,11 @@ impl CCTransaction for AddRepaymentOrder {
         let state_data = get_state_data(tx_ctx, &self.deal_order_id)?;
         let deal_order = protos::DealOrder::try_parse(&state_data)?;
         if deal_order.sighash == my_sighash.as_str() {
-            bail_transaction!("Fundaisers cannot create repayment orders");
+            bail_transaction!("Fundraisers cannot create repayment orders");
         }
         if deal_order.loan_transfer.is_empty() || !deal_order.repayment_transfer.is_empty() {
             bail_transaction!(
-                "A repayment order can be created onyl for a deal with an active loan"
+                "A repayment order can be created only for a deal with an active loan"
             );
         }
 
