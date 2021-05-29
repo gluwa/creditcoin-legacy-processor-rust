@@ -401,7 +401,7 @@ fn get_u64(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> Result<u64, A
     let str_value = get_string(map, key, name)?;
     str_value
         .parse()
-        .map_err(|_| InvalidTransaction("Invalid number format".into()))
+        .map_err(|_| InvalidTransaction("Invalid number".into()))
 }
 
 fn to_hex_string(bytes: &[u8]) -> String {
@@ -641,7 +641,12 @@ pub fn compress(uncompressed: &str) -> Result<SigHash, ApplyError> {
 
 fn last_block(request: &TpProcessRequest, _ctx: &mut HandlerContext) -> BlockNum {
     // TODO: transitioning
-    Integer::from(request.get_tip() - 1)
+    let tip = request.get_tip();
+    if tip == 0 {
+        Integer::new()
+    } else {
+        Integer::from(tip - 1)
+    }
 }
 
 fn get_state_data<A: AsRef<str>>(
@@ -667,7 +672,7 @@ fn add_state<M: Message>(states: &mut StateVec, id: String, message: &M) -> Resu
     let mut buf = Vec::with_capacity(message.encoded_len());
     message
         .encode(&mut buf)
-        .map_err(|e| InternalError(format!("Failed to add state : {}", e)))?;
+        .map_err(|e| InvalidTransaction(format!("Failed to add state : {}", e)))?;
     states.push((id, buf));
     Ok(())
 }
@@ -720,14 +725,17 @@ fn charge(
 fn verify(ctx: &mut HandlerContext, gateway_command: &str) -> Result<(), ApplyError> {
     ctx.local_gateway_sock
         .send(gateway_command, 0)
-        .map_err(|e| InternalError(format!("Failed to send command to gateway : {}", e)))?;
-    let response = ctx
-        .local_gateway_sock
-        .recv_string(0)
-        .map_err(|e| InternalError(format!("Failed to receive resonse from gateway : {}", e)))?;
+        .map_err(|e| InvalidTransaction(format!("Failed to send command to gateway : {}", e)))?;
+    let response = ctx.local_gateway_sock.recv_string(0).map_err(|e| {
+        InvalidTransaction(format!("Failed to receive resonse from gateway : {}", e))
+    })?;
     let response = match response {
         Ok(s) => s,
-        Err(_) => return Err(InternalError("Gateway response was invalid UTF-8".into())),
+        Err(_) => {
+            return Err(InvalidTransaction(
+                "Gateway response was invalid UTF-8".into(),
+            ))
+        }
     };
     if response.is_empty() || response == "miss" {
         // TODO: handle error case
@@ -1729,9 +1737,9 @@ fn award(
         let mut reward = Integer::new();
         buf.assign(block_idx / BLOCKS_IN_PERIOD_UPDATE1);
 
-        let period = buf
-            .to_i32()
-            .ok_or_else(|| InternalError("Block number is too large to fit in an i32".into()))?;
+        let period = buf.to_i32().ok_or_else(|| {
+            InvalidTransaction("Block number is too large to fit in an i32".into())
+        })?;
         let fraction = (19.0f64 / 20.0f64).powi(period);
         let fraction_str = format!("{:.6}", fraction);
         let pos = fraction_str.find('.').unwrap();
@@ -1776,7 +1784,7 @@ fn award(
         let mut buf = Vec::with_capacity(wallet.encoded_len());
         wallet
             .encode(&mut buf)
-            .map_err(|e| InternalError(format!("Failed to add state : {}", e)))?;
+            .map_err(|e| InvalidTransaction(format!("Failed to add state : {}", e)))?;
         tx_ctx.set_state_entry(wallet_id, buf)?;
     }
     Ok(())
@@ -1815,9 +1823,9 @@ fn reward(
         let mut i = Integer::from(processed_block_idx + 1);
 
         while i <= last_block_idx {
-            let height = i
-                .to_u64()
-                .ok_or_else(|| InternalError("Block number is too large to fit in a u64".into()))?;
+            let height = i.to_u64().ok_or_else(|| {
+                InvalidTransaction("Block number is too large to fit in a u64".into())
+            })?;
 
             let signer = tx_ctx.get_sig_by_num(height)?;
 
@@ -1825,12 +1833,14 @@ fn reward(
             i += 1;
         }
     } else {
-        let first = last_block_idx
-            .to_u64()
-            .ok_or_else(|| InternalError("Block number is too large to fit in a u64".into()))?;
+        let first = last_block_idx.to_u64().ok_or_else(|| {
+            InvalidTransaction("Block number is too large to fit in a u64".into())
+        })?;
         let last = Integer::from(processed_block_idx + 1)
             .to_u64()
-            .ok_or_else(|| InternalError("Block number is too large to fit in a u64".into()))?;
+            .ok_or_else(|| {
+                InvalidTransaction("Block number is too large to fit in a u64".into())
+            })?;
 
         let signatures = tx_ctx.get_reward_block_signatures(sig, first, last)?;
 
@@ -1911,10 +1921,11 @@ impl CCTransaction for Housekeeping {
         let mut last_processed_block_idx = Integer::new();
 
         if !state_data.is_empty() {
-            last_processed_block_idx
-                .assign(Integer::try_parse(str::from_utf8(&state_data).map_err(
-                    |e| InternalError(format!("State data is not valid UTF-8 : {}", e)),
-                )?)?);
+            last_processed_block_idx.assign(Integer::try_parse(
+                str::from_utf8(&state_data).map_err(|e| {
+                    InvalidTransaction(format!("State data is not valid UTF-8 : {}", e))
+                })?,
+            )?);
         }
 
         if block_idx == 0 {
@@ -2034,7 +2045,7 @@ impl CCTransaction for Housekeeping {
                 state_data.reserve(wallet.encoded_len());
                 wallet
                     .encode(&mut state_data)
-                    .map_err(|e| InternalError(format!("Failed to encode wallet : {}", e)))?;
+                    .map_err(|e| InvalidTransaction(format!("Failed to encode wallet : {}", e)))?;
 
                 tx_ctx.set_state_entry(wallet_id, state_data)?;
                 tx_ctx.delete_state_entry(addr)?;
@@ -2146,6 +2157,10 @@ impl TransactionHandler for CCTransactionHandler {
             .map_err(|e| InternalError(format!("Failed to create socket : {}", e)))?;
         sock.connect(&self.gateway_endpoint)
             .map_err(|e| InternalError(format!("Failed to connect socket to gateway : {}", e)))?;
+        sock.set_rcvtimeo(15)
+            .map_err(|e| InternalError(format!("Failed to set socket receive timeout : {}", e)))?;
+        sock.set_sndtimeo(15)
+            .map_err(|e| InternalError(format!("Failed to set socket send timeout : {}", e)))?;
         let mut handler_context = HandlerContext::builder()
             .gateway_context(self.zmq_context.clone())
             .local_gateway_sock(sock)
