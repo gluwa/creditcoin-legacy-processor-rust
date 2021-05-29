@@ -484,10 +484,10 @@ impl TryFrom<Value> for CCCommand {
                 }
                 "AddBidOrder" => {
                     let address_id = get_string(&map, "p1", "addressId")?.to_lowercase();
-                    let amount_str = get_string(&map, "p2", "amount")?.clone();
-                    let interest = get_string(&map, "p3", "interest")?.clone();
-                    let maturity = get_string(&map, "p4", "maturity")?.clone();
-                    let fee = get_string(&map, "p5", "fee")?.to_owned();
+                    let amount_str = get_integer_string(&map, "p2", "amount")?.clone();
+                    let interest = get_integer_string(&map, "p3", "interest")?.clone();
+                    let maturity = get_integer_string(&map, "p4", "maturity")?.clone();
+                    let fee = get_integer_string(&map, "p5", "fee")?.to_owned();
                     let expiration = get_u64(&map, "p6", "expiration")?;
                     AddBidOrder {
                         address_id,
