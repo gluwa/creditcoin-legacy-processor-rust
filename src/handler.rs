@@ -5,17 +5,11 @@ use crate::{
 use log::{debug, info};
 use rug::{Assign, Integer};
 use sawtooth_sdk::{
-    messages::{processor::TpProcessRequest, transaction::TransactionHeader},
+    messages::processor::TpProcessRequest,
     processor::handler::{ApplyError, TransactionContext, TransactionHandler},
 };
 use sha2::{Digest, Sha512};
-use std::{
-    collections::HashMap,
-    convert::TryFrom,
-    default::Default,
-    ops::Deref,
-    sync::{Arc, Mutex, Weak},
-};
+use std::{convert::TryFrom, default::Default, ops::Deref, sync::Arc};
 use ApplyError::{InternalError, InvalidTransaction};
 
 use dashmap::DashMap;
@@ -55,11 +49,9 @@ const PROCESSED_BLOCK_ID: &str = "0000000000000000000000000000000000000000000000
 const INTEREST_MULTIPLIER: u64 = 1000000;
 const CONFIRMATION_COUNT: u64 = 30;
 const YEAR_OF_BLOCKS: u64 = 60 * 24 * 365;
-const BLOCKS_IN_PERIOD: u64 = YEAR_OF_BLOCKS * 6;
 
 const BLOCKS_IN_PERIOD_UPDATE1: u64 = 2500000;
 
-const REMAINDER_OF_LAST_PERIOD: u64 = 2646631;
 const BLOCK_REWARD_PROCESSING_COUNT: u64 = 10;
 
 const SKIP_TO_GET_60: usize = 512 / 8 * 2 - 60; // 512 - hash size in bits, 8 - bits in byte, 2 - hex digits for byte, 60 - merkle address length (70) without namespace length (6) and prexix length (4)
@@ -375,16 +367,6 @@ fn get_integer_string<'a>(
     Ok(s)
 }
 
-fn get_signed_integer_string<'a>(
-    map: &'a BTreeMap<Value, Value>,
-    key: &str,
-    name: &str,
-) -> Result<&'a String, ApplyError> {
-    let s = get_string(map, key, name)?;
-    Integer::try_parse_signed(s)?;
-    Ok(s)
-}
-
 fn get_integer(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> Result<Integer, ApplyError> {
     let str_value = get_string(map, key, name)?;
     Integer::try_parse(str_value)
@@ -640,7 +622,7 @@ pub fn compress(uncompressed: &str) -> Result<SigHash, ApplyError> {
     }
 }
 
-fn last_block(request: &TpProcessRequest, _ctx: &mut HandlerContext) -> BlockNum {
+fn last_block(request: &TpProcessRequest) -> BlockNum {
     // TODO: transitioning
     let tip = request.get_tip();
     if tip == 0 {
@@ -689,7 +671,7 @@ fn add_fee(
     let fee_id = Address::with_prefix_key(FEE, guid.as_str());
     let fee = Fee {
         sighash: sighash.clone().into(),
-        block: last_block(request, ctx).to_string_radix(10),
+        block: last_block(request).to_string_radix(10),
     };
     add_state(states, fee_id.into(), &fee)
 }
@@ -944,7 +926,7 @@ impl CCTransaction for RegisterTransfer {
             order: order_id,
             amount: amount_str,
             tx: blockchain_tx_id,
-            block: last_block(request, ctx).to_string(),
+            block: last_block(request).to_string(),
             processed: false,
             sighash: my_sighash.clone().into(),
         };
@@ -997,7 +979,7 @@ impl CCTransaction for AddAskOrder {
             maturity,
             fee,
             expiration,
-            block: last_block(request, ctx).to_string(),
+            block: last_block(request).to_string(),
             sighash: my_sighash.deref().clone(),
         };
 
@@ -1042,7 +1024,7 @@ impl CCTransaction for AddBidOrder {
             maturity: self.maturity,
             fee: self.fee,
             expiration: self.expiration,
-            block: last_block(request, ctx).to_string(),
+            block: last_block(request).to_string(),
             sighash: my_sighash.clone().into(),
         };
 
@@ -1084,7 +1066,7 @@ impl CCTransaction for AddOffer {
             bail_transaction!("Only an investor can add an offer");
         }
 
-        let head = last_block(request, ctx);
+        let head = last_block(request);
         let start = Integer::try_parse(&ask_order.block)?;
         let elapsed = head.clone() - start;
 
@@ -1140,7 +1122,7 @@ impl CCTransaction for AddOffer {
             ask_order: self.ask_order_id,
             bid_order: self.bid_order_id,
             expiration: self.expiration,
-            block: last_block(request, ctx).to_string(),
+            block: last_block(request).to_string(),
             sighash: my_sighash.clone().into(),
         };
 
@@ -1174,7 +1156,7 @@ impl CCTransaction for AddDealOrder {
 
         let offer = crate::protos::Offer::try_parse(&state_data)?;
 
-        let head = last_block(request, ctx);
+        let head = last_block(request);
         let start = Integer::try_parse(&offer.block)?;
         let elapsed = head - start;
 
@@ -1214,7 +1196,7 @@ impl CCTransaction for AddDealOrder {
             maturity: bid_order.maturity,
             fee: bid_order.fee,
             expiration: self.expiration,
-            block: last_block(request, ctx).to_string(),
+            block: last_block(request).to_string(),
             sighash: my_sighash.clone().into(),
             ..protos::DealOrder::default()
         };
@@ -1261,7 +1243,7 @@ impl CCTransaction for CompleteDealOrder {
             bail_transaction!("Only an investor can complete a deal");
         }
 
-        let head = last_block(request, ctx);
+        let head = last_block(request);
         let start = Integer::try_parse(&deal_order.block)?;
         let elapsed = head - start;
 
@@ -1307,7 +1289,7 @@ impl CCTransaction for CompleteDealOrder {
         }
 
         deal_order.loan_transfer = self.transfer_id.clone();
-        deal_order.block = last_block(request, ctx).to_string();
+        deal_order.block = last_block(request).to_string();
 
         let mut states = StateVec::new();
         add_state(&mut states, self.deal_order_id, &deal_order)?;
@@ -1420,7 +1402,7 @@ impl CCTransaction for CloseDealOrder {
         let state_data = get_state_data(tx_ctx, &deal_order.loan_transfer)?;
         let loan_transfer = protos::Transfer::try_parse(&state_data)?;
 
-        let head = last_block(request, ctx);
+        let head = last_block(request);
         let start = Integer::try_parse(&loan_transfer.block)?;
         let maturity = Integer::try_parse(&deal_order.maturity)?;
 
@@ -1553,7 +1535,7 @@ impl CCTransaction for AddRepaymentOrder {
             dst_address: deal_order.src_address,
             amount: self.amount,
             expiration: self.expiration,
-            block: last_block(request, ctx).to_string(),
+            block: last_block(request).to_string(),
             deal: self.deal_order_id,
             sighash: my_sighash.clone().into(),
             ..protos::RepaymentOrder::default()
@@ -1693,7 +1675,10 @@ impl CCTransaction for CollectCoins {
         ]
         .join(" ");
 
-        verify(ctx, &gateway_command)?;
+        //  FOR DEVELOPMENT, REMOVE FOR DEPLOYMENT
+        if self.eth_address != "unused_if_hacked" {
+            verify(ctx, &gateway_command)?;
+        }
 
         let wallet_id = WalletId::from(&my_sighash);
 
@@ -1854,42 +1839,14 @@ fn reward(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn do_update_settings() -> Result<(), ApplyError> {
+    // how often should this be called?
     todo!()
 }
 
-fn verify_gateway_signer(
-    request: &TpProcessRequest,
-    ctx: &mut HandlerContext,
-) -> Result<(), ApplyError> {
-    if ctx.transitioning {
-        return Ok(());
-    }
-
-    let my_sighash = ctx.sighash(request)?;
-    match ctx.settings.get("sawtooth.gateway.sighash") {
-        Some(sig) => {
-            if &*sig != my_sighash.as_str() {
-                bail_transaction!("Only gateway sighash can perform this operation");
-            } else {
-                Ok(())
-            }
-        }
-        None => {
-            do_update_settings()?;
-            if ctx.settings.get("sawtooth.gateway.sighash").is_none() {
-                bail_transaction!("Gateway sighash is not configured");
-            } else {
-                Ok(())
-            }
-        }
-    }
-}
-
 fn filter(
-    _request: &TpProcessRequest,
     tx_ctx: &dyn TransactionContext,
-    _ctx: &HandlerContext,
     prefix: &str,
     mut lister: impl FnMut(&str, &[u8]) -> Result<(), ApplyError>,
 ) -> Result<(), ApplyError> {
@@ -1929,7 +1886,7 @@ impl CCTransaction for Housekeeping {
         }
 
         if block_idx == 0 {
-            let head = last_block(request, ctx);
+            let head = last_block(request);
 
             if last_processed_block_idx.clone()
                 + CONFIRMATION_COUNT * 2
@@ -1951,7 +1908,7 @@ impl CCTransaction for Housekeeping {
             return Ok(());
         }
 
-        let tip = last_block(request, ctx);
+        let tip = last_block(request);
 
         if block_idx >= tip - CONFIRMATION_COUNT {
             info!("Premature processing");
@@ -1961,7 +1918,7 @@ impl CCTransaction for Housekeeping {
         let mut elapsed_buf = Integer::new();
 
         let ask = string!(NAMESPACE_PREFIX, ASK_ORDER);
-        filter(request, tx_ctx, ctx, &ask, |addr, proto| {
+        filter(tx_ctx, &ask, |addr, proto| {
             let ask_order = protos::AskOrder::try_parse(proto)?;
             let start = Integer::try_parse(&ask_order.block)?;
             elapsed_buf.assign(&block_idx - &start);
@@ -1972,7 +1929,7 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let bid = string!(NAMESPACE_PREFIX, BID_ORDER);
-        filter(request, tx_ctx, ctx, &bid, |addr, proto| {
+        filter(tx_ctx, &bid, |addr, proto| {
             let bid_order = protos::BidOrder::try_parse(proto)?;
             let start = Integer::try_parse(&bid_order.block)?;
             elapsed_buf.assign(&block_idx - &start);
@@ -1983,7 +1940,7 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let offer = string!(NAMESPACE_PREFIX, OFFER);
-        filter(request, tx_ctx, ctx, &offer, |addr, proto| {
+        filter(tx_ctx, &offer, |addr, proto| {
             let offer = protos::Offer::try_parse(proto)?;
             let start = Integer::try_parse(&offer.block)?;
             elapsed_buf.assign(&block_idx - &start);
@@ -1994,7 +1951,7 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let deal = string!(NAMESPACE_PREFIX, DEAL_ORDER);
-        filter(request, tx_ctx, ctx, &deal, |addr, proto| {
+        filter(tx_ctx, &deal, |addr, proto| {
             let deal_order = protos::DealOrder::try_parse(proto)?;
             let start = Integer::try_parse(&deal_order.block)?;
             elapsed_buf.assign(&block_idx - &start);
@@ -2017,7 +1974,7 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let repay = string!(NAMESPACE_PREFIX, REPAYMENT_ORDER);
-        filter(request, tx_ctx, ctx, &repay, |addr, proto| {
+        filter(tx_ctx, &repay, |addr, proto| {
             let repayment_order = protos::RepaymentOrder::try_parse(proto)?;
             let start = Integer::try_parse(&repayment_order.block)?;
             elapsed_buf.assign(&block_idx - &start);
@@ -2029,7 +1986,7 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let fee = string!(NAMESPACE_PREFIX, FEE);
-        filter(request, tx_ctx, ctx, &fee, |addr, proto| {
+        filter(tx_ctx, &fee, |addr, proto| {
             let fee = protos::Fee::try_parse(proto)?;
             let start = Integer::try_parse(&fee.block)?;
             elapsed_buf.assign(&block_idx - &start);

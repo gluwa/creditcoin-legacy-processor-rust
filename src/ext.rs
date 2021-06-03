@@ -1,4 +1,3 @@
-use crate::handler::State;
 use rug::Integer;
 use sawtooth_sdk::processor::handler::ApplyError;
 
