@@ -16,7 +16,6 @@ pub trait IntegerExt {
     }
 
     fn try_parse_signed<S: AsRef<str>>(s: S) -> Result<Integer, ApplyError> {
-        log::info!("s = {:?}", s.as_ref());
         Integer::parse(s.as_ref())
             .map(Integer::from)
             .map_err(|_| ApplyError::InvalidTransaction("Invalid number format".into()))
@@ -33,7 +32,7 @@ pub trait MessageExt<M> {
 impl<M: Message + Default> MessageExt<M> for M {
     fn try_parse<B: AsRef<[u8]>>(buf: B) -> Result<M, ApplyError> {
         M::decode(buf.as_ref()).map_err(|e| {
-            ApplyError::InternalError(format!("Failed to parse protobuf message : {}", e))
+            ApplyError::InvalidTransaction(format!("Failed to parse protobuf message : {}", e))
         })
     }
 }

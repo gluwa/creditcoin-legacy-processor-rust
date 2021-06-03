@@ -644,6 +644,7 @@ fn last_block(request: &TpProcessRequest, _ctx: &mut HandlerContext) -> BlockNum
     // TODO: transitioning
     let tip = request.get_tip();
     if tip == 0 {
+        log::warn!("tip was 0");
         Integer::new()
     } else {
         Integer::from(tip - 1)
@@ -710,7 +711,6 @@ fn charge(
     sighash: &SigHash,
 ) -> Result<(WalletId, Wallet), ApplyError> {
     let wallet_id = WalletId::from(sighash);
-    debug!("{:?}", wallet_id);
     let state_data = get_state_data(txn_ctx, &wallet_id)?;
     let mut wallet = Wallet::try_parse(&state_data)?;
     let balance = Integer::try_parse(&wallet.amount)?;
@@ -728,7 +728,7 @@ fn verify(ctx: &mut HandlerContext, gateway_command: &str) -> Result<(), ApplyEr
         .send(gateway_command, 0)
         .map_err(|e| InvalidTransaction(format!("Failed to send command to gateway : {}", e)))?;
     let response = ctx.local_gateway_sock.recv_string(0).map_err(|e| {
-        InvalidTransaction(format!("Failed to receive resonse from gateway : {}", e))
+        InvalidTransaction(format!("Failed to receive response from gateway : {}", e))
     })?;
     let response = match response {
         Ok(s) => s,
@@ -744,9 +744,9 @@ fn verify(ctx: &mut HandlerContext, gateway_command: &str) -> Result<(), ApplyEr
     if response == "good" {
         Ok(())
     } else {
+        log::warn!("Failed to validate transaction, got response: {}", response);
         Err(InvalidTransaction(format!(
-            "Couldn't validate the transaction : got response {}",
-            response
+            "Couldn't validate the transaction"
         )))
     }
 }
@@ -1583,7 +1583,7 @@ impl CCTransaction for CompleteRepaymentOrder {
         let state_data = get_state_data(tx_ctx, &self.repayment_order_id)?;
         let mut repayment_order = protos::RepaymentOrder::try_parse(&state_data)?;
 
-        let state_data = get_state_data(tx_ctx, &repayment_order.src_address)?;
+        let state_data = get_state_data(tx_ctx, &repayment_order.dst_address)?;
         let address = protos::Address::try_parse(&state_data)?;
         if address.sighash != my_sighash.as_str() {
             bail_transaction!("Only an investor can complete a repayment order");
@@ -1673,11 +1673,10 @@ impl CCTransaction for CollectCoins {
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
     ) -> Result<(), ApplyError> {
-        info!("HERE");
         let id = Address::with_prefix_key(ERC20, &self.blockchain_tx_id);
-        let state_data = try_get_state_data(tx_ctx, &id)?.unwrap_or_default();
+        let state_data = try_get_state_data(tx_ctx, &id)?;
 
-        if !state_data.is_empty() {
+        if state_data.is_some() {
             bail_transaction!("Already collected");
         }
 
@@ -2086,7 +2085,6 @@ impl HandlerContext {
     fn sighash(&self, request: &TpProcessRequest) -> Result<SigHash, ApplyError> {
         // TODO: transitioning
         let signer = request.get_header().get_signer_public_key();
-        info!("signer = {}", signer);
         let compressed = compress(signer)?;
         let hash = sha512_id(compressed.as_bytes());
         Ok(SigHash(hash))
