@@ -76,11 +76,11 @@ fn main() -> Result<()> {
 
     info!("ccprocessor-rust ({})", env!("CARGO_PKG_VERSION"));
 
-    info!("ccprocessor-rust connecting to gateway {} ...", gateway);
-    let handler = handler::CCTransactionHandler::new(gateway);
-
     info!("ccprocessor-rust connecting to {} ...", endpoint);
     let mut processor = TransactionProcessor::new(endpoint);
+
+    info!("ccprocessor-rust connecting to gateway {} ...", gateway);
+    let handler = handler::CCTransactionHandler::new(&processor, gateway);
 
     processor.add_handler(&handler);
     processor.start();

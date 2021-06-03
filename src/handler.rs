@@ -6,10 +6,20 @@ use log::{debug, info};
 use rug::{Assign, Integer};
 use sawtooth_sdk::{
     messages::processor::TpProcessRequest,
-    processor::handler::{ApplyError, TransactionContext, TransactionHandler},
+    processor::{
+        handler::{ApplyError, TransactionContext, TransactionHandler},
+        TransactionProcessor,
+    },
 };
 use sha2::{Digest, Sha512};
-use std::{convert::TryFrom, default::Default, ops::Deref, sync::Arc};
+use std::{
+    convert::TryFrom,
+    default::Default,
+    ops::Deref,
+    sync::{mpsc, Arc},
+    thread::{self, JoinHandle},
+    time::Duration,
+};
 use ApplyError::{InternalError, InvalidTransaction};
 
 use dashmap::DashMap;
@@ -43,6 +53,7 @@ const OFFER: &str = "7000";
 const ERC20: &str = "8000";
 const PROCESSED_BLOCK: &str = "9000";
 const FEE: &str = "0100";
+const SETTINGS_NAMESPACE: &str = "000000";
 
 const PROCESSED_BLOCK_ID: &str = "000000000000000000000000000000000000000000000000000000000000";
 
@@ -209,6 +220,70 @@ impl Deref for Settings {
 
     fn deref(&self) -> &Self::Target {
         &*self.inner
+    }
+}
+
+struct SettingsUpdater {
+    handle: Option<JoinHandle<()>>,
+    sender: mpsc::Sender<()>,
+}
+
+fn updater_should_stop(receiver: &mpsc::Receiver<()>) -> bool {
+    match receiver.try_recv() {
+        Ok(_) | Err(mpsc::TryRecvError::Disconnected) => true,
+        Err(mpsc::TryRecvError::Empty) => false,
+    }
+}
+
+fn update_settings(tx_ctx: &dyn TransactionContext, settings: &Settings) -> Result<()> {
+    use sawtooth_sdk::messages::Message;
+    filter(tx_ctx, SETTINGS_NAMESPACE, |_, proto| {
+        let setting = sawtooth_sdk::messages::setting::Setting::parse_from_bytes(&proto)
+            .map_err(|e| InternalError(format!("Failed to parse setting from bytes: {}", e)))?;
+
+        for entry in setting.entries {
+            settings.insert(entry.key, entry.value);
+        }
+        Ok(())
+    })?;
+
+    Ok(())
+}
+
+impl SettingsUpdater {
+    fn new(tx_ctx: Box<dyn TransactionContext + Send>, settings: Settings) -> Self {
+        let (sender, receiver) = mpsc::channel();
+
+        let handle = thread::spawn(move || {
+            let tx_ctx = tx_ctx;
+            'outer: loop {
+                if updater_should_stop(&receiver) {
+                    break;
+                }
+                thread::sleep(Duration::from_secs(6));
+                if let Err(e) = update_settings(&*tx_ctx, &settings) {
+                    log::error!("Error occurred while updating settings: {}", e);
+                }
+                for _ in 0..1000 {
+                    thread::sleep(Duration::from_secs(6));
+                    if updater_should_stop(&receiver) {
+                        break 'outer;
+                    }
+                }
+            }
+        });
+
+        Self {
+            sender,
+            handle: Some(handle),
+        }
+    }
+}
+
+impl Drop for SettingsUpdater {
+    fn drop(&mut self) {
+        self.sender.send(()).unwrap();
+        self.handle.take().unwrap().join().unwrap();
     }
 }
 
@@ -2044,17 +2119,21 @@ pub struct CCTransactionHandler {
     zmq_context: zmq::Context,
     gateway_endpoint: String,
     settings: Settings,
+    #[allow(unused)]
+    updater: SettingsUpdater,
 }
 
 impl CCTransactionHandler {
-    pub fn new<S: Into<String>>(gateway: S) -> Self {
+    pub fn new<S: Into<String>>(processor: &TransactionProcessor, gateway: S) -> Self {
         let gateway_endpoint: String = gateway.into();
         let context = zmq::Context::new();
+        let settings = Settings::new();
 
         Self {
             zmq_context: context,
             gateway_endpoint,
-            settings: Settings::new(),
+            updater: SettingsUpdater::new(processor.empty_context(), settings.clone()),
+            settings,
         }
     }
 }
