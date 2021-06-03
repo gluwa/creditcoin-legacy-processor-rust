@@ -66,6 +66,8 @@ const SKIP_TO_GET_60: usize = 512 / 8 * 2 - 60; // 512 - hash size in bits, 8 - 
 
 const DEAL_EXP_FIX_BLOCK: u64 = 278890;
 
+const GATEWAY_TIMEOUT: i32 = 5000000;
+
 static NAMESPACE_PREFIX: Lazy<String> = Lazy::new(|| {
     let ns = sha512(NAMESPACE);
     String::from(&ns[..NAMESPACE_PREFIX_LENGTH])
@@ -2156,9 +2158,9 @@ impl TransactionHandler for CCTransactionHandler {
             .map_err(|e| InternalError(format!("Failed to create socket : {}", e)))?;
         sock.connect(&self.gateway_endpoint)
             .map_err(|e| InternalError(format!("Failed to connect socket to gateway : {}", e)))?;
-        sock.set_rcvtimeo(15)
+        sock.set_rcvtimeo(GATEWAY_TIMEOUT)
             .map_err(|e| InternalError(format!("Failed to set socket receive timeout : {}", e)))?;
-        sock.set_sndtimeo(15)
+        sock.set_sndtimeo(GATEWAY_TIMEOUT)
             .map_err(|e| InternalError(format!("Failed to set socket send timeout : {}", e)))?;
         let mut handler_context = HandlerContext::builder()
             .gateway_context(self.zmq_context.clone())
