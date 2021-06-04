@@ -8,7 +8,7 @@ use sawtooth_sdk::{
     messages::processor::TpProcessRequest,
     processor::{
         handler::{ApplyError, TransactionContext, TransactionHandler},
-        TransactionProcessor,
+        EmptyTransactionContext, TransactionProcessor,
     },
 };
 use sha2::{Digest, Sha512};
@@ -223,19 +223,28 @@ impl Deref for Settings {
     }
 }
 
-struct SettingsUpdater {
+pub(crate) struct SettingsUpdater {
     handle: Option<JoinHandle<()>>,
-    sender: mpsc::Sender<()>,
+    pub(crate) sender: mpsc::Sender<()>,
+    _tx_ctx: EmptyTransactionContext,
 }
 
 fn updater_should_stop(receiver: &mpsc::Receiver<()>) -> bool {
     match receiver.try_recv() {
-        Ok(_) | Err(mpsc::TryRecvError::Disconnected) => true,
+        Ok(_) => {
+            log::warn!("Received stop command");
+            true
+        }
+        Err(mpsc::TryRecvError::Disconnected) => {
+            log::error!("other end of channel disconnected!");
+            true
+        }
         Err(mpsc::TryRecvError::Empty) => false,
     }
 }
 
-fn update_settings(tx_ctx: &dyn TransactionContext, settings: &Settings) -> Result<()> {
+fn update_settings(tx_ctx: &EmptyTransactionContext, settings: &Settings) -> Result<()> {
+    info!("updating settings");
     use sawtooth_sdk::messages::Message;
     filter(tx_ctx, SETTINGS_NAMESPACE, |_, proto| {
         let setting = sawtooth_sdk::messages::setting::Setting::parse_from_bytes(&proto)
@@ -251,24 +260,26 @@ fn update_settings(tx_ctx: &dyn TransactionContext, settings: &Settings) -> Resu
 }
 
 impl SettingsUpdater {
-    fn new(tx_ctx: Box<dyn TransactionContext + Send>, settings: Settings) -> Self {
+    fn new(tx_ctx: EmptyTransactionContext, settings: Settings) -> Self {
         let (sender, receiver) = mpsc::channel();
+        let tx_ctx = Arc::new(tx_ctx);
 
-        let handle = thread::spawn(move || {
-            let tx_ctx = tx_ctx;
-            'outer: loop {
-                if updater_should_stop(&receiver) {
-                    break;
-                }
+        let ctx_copy = Arc::clone(&tx_ctx);
+
+        let handle = thread::spawn(move || 'outer: loop {
+            if updater_should_stop(&receiver) {
+                log::warn!("stopping settings updater");
+                break;
+            }
+            thread::sleep(Duration::from_secs(6));
+            if let Err(e) = update_settings(&tx_ctx, &settings) {
+                log::error!("Error occurred while updating settings: {}", e);
+            }
+            for _ in 0..10 {
                 thread::sleep(Duration::from_secs(6));
-                if let Err(e) = update_settings(&*tx_ctx, &settings) {
-                    log::error!("Error occurred while updating settings: {}", e);
-                }
-                for _ in 0..1000 {
-                    thread::sleep(Duration::from_secs(6));
-                    if updater_should_stop(&receiver) {
-                        break 'outer;
-                    }
+                if updater_should_stop(&receiver) {
+                    log::warn!("stopping settings updater");
+                    break 'outer;
                 }
             }
         });
@@ -276,13 +287,20 @@ impl SettingsUpdater {
         Self {
             sender,
             handle: Some(handle),
+            _tx_ctx: ctx_copy,
         }
+    }
+
+    pub(crate) fn exit(&self) {
+        self.sender.send(()).unwrap();
     }
 }
 
 impl Drop for SettingsUpdater {
     fn drop(&mut self) {
+        log::warn!("dropping settings updater");
         self.sender.send(()).unwrap();
+        log::warn!("joining updater thread");
         self.handle.take().unwrap().join().unwrap();
     }
 }
@@ -2119,8 +2137,7 @@ pub struct CCTransactionHandler {
     zmq_context: zmq::Context,
     gateway_endpoint: String,
     settings: Settings,
-    #[allow(unused)]
-    updater: SettingsUpdater,
+    pub(crate) updater: SettingsUpdater,
 }
 
 impl CCTransactionHandler {

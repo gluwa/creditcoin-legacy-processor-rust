@@ -87,6 +87,8 @@ fn main() -> Result<()> {
 
     info!("ccprocessor-rust exiting ...");
 
+    handler.updater.exit();
+
     Ok(())
 }
 
