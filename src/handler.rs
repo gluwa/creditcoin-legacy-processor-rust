@@ -15,6 +15,7 @@ use sha2::{Digest, Sha512};
 use std::{
     convert::TryFrom,
     default::Default,
+    mem,
     ops::Deref,
     sync::{mpsc, Arc},
     thread::{self, JoinHandle},
@@ -69,7 +70,10 @@ const SKIP_TO_GET_60: usize = 512 / 8 * 2 - 60; // 512 - hash size in bits, 8 - 
 
 const DEAL_EXP_FIX_BLOCK: u64 = 278890;
 
-const GATEWAY_TIMEOUT: i32 = 5000000;
+const GATEWAY_TIMEOUT: i32 = 500000;
+
+// For debugging
+// const GATEWAY_TIMEOUT: i32 = 10000;
 
 static NAMESPACE_PREFIX: Lazy<String> = Lazy::new(|| {
     let ns = sha512(NAMESPACE);
@@ -786,28 +790,74 @@ fn charge(txn_ctx: &dyn TransactionContext, sighash: &SigHash) -> Result<(Wallet
     Ok((wallet_id, wallet))
 }
 
+fn try_verify_external(ctx: &mut HandlerContext, gateway_command: &str) -> Result<Option<String>> {
+    log::warn!("Falling back to external gateway");
+    let new_local_sock = create_socket(&ctx.gateway_context, &ctx.gateway_endpoint)?;
+    mem::drop(mem::replace(&mut ctx.local_gateway_sock, new_local_sock));
+
+    let address = ctx
+        .settings
+        .get("sawtooth.validator.gateway")
+        .map(|s| ToOwned::to_owned(s.as_str()));
+
+    if let Some(mut external_gateway_address) = address {
+        log::info!("Found external gateway address");
+
+        if !external_gateway_address.starts_with("tcp://") {
+            external_gateway_address.insert_str(0, "tcp://");
+        }
+
+        let external_gateway_sock = create_socket(&ctx.gateway_context, &external_gateway_address)?;
+        external_gateway_sock
+            .send(gateway_command, 0)
+            .map_err(|e| {
+                InternalError(format!(
+                    "Failed to send command to external gateway : {}",
+                    e
+                ))
+            })?;
+        let external_response = external_gateway_sock
+            .recv_string(0)
+            .map_err(|e| {
+                InternalError(format!(
+                    "Failed to receive response from external gateway : {}",
+                    e
+                ))
+            })?
+            .map_err(|_| InternalError("External gateway response was invalid UTF-8".into()))?;
+        Ok(Some(external_response))
+    } else {
+        Ok(None)
+    }
+}
+
 fn verify(ctx: &mut HandlerContext, gateway_command: &str) -> Result<()> {
     ctx.local_gateway_sock
         .send(gateway_command, 0)
-        .map_err(|e| InvalidTransaction(format!("Failed to send command to gateway : {}", e)))?;
-    let response = ctx.local_gateway_sock.recv_string(0).map_err(|e| {
-        InvalidTransaction(format!("Failed to receive response from gateway : {}", e))
-    })?;
+        .map_err(|e| InternalError(format!("Failed to send command to gateway : {}", e)))?;
+    let response = ctx.local_gateway_sock.recv_string(0);
     let response = match response {
-        Ok(s) => s,
-        Err(_) => {
+        Ok(Ok(s)) if s.is_empty() || s == "miss" => {
+            try_verify_external(ctx, gateway_command)?.unwrap_or(s)
+        }
+        Err(_) => try_verify_external(ctx, gateway_command)?.ok_or_else(|| {
+            InternalError("Both local and external gateways were inaccessible".into())
+        })?,
+        Ok(Ok(s)) => s,
+        Ok(Err(_)) => {
             return Err(InvalidTransaction(
                 "Gateway response was invalid UTF-8".into(),
             ))
         }
     };
-    if response.is_empty() || response == "miss" {
-        // TODO: handle error case
-    }
+
     if response == "good" {
         Ok(())
     } else {
-        log::warn!("Failed to validate transaction, got response: {}", response);
+        log::warn!(
+            "Gateway failed to validate transaction, got response: {}",
+            response
+        );
         Err(InvalidTransaction(format!(
             "Couldn't validate the transaction"
         )))
@@ -2116,6 +2166,7 @@ struct HandlerContext {
     gateway_context: zmq::Context,
     local_gateway_sock: Socket,
     settings: Settings,
+    gateway_endpoint: String,
 }
 
 impl HandlerContext {
@@ -2160,6 +2211,19 @@ fn params_from_bytes(bytes: &[u8]) -> anyhow::Result<Value> {
     Ok(res)
 }
 
+fn create_socket(zmq_context: &zmq::Context, endpoint: &str) -> Result<Socket> {
+    let sock = zmq_context
+        .socket(zmq::SocketType::REQ)
+        .map_err(|e| InternalError(format!("Failed to create socket : {}", e)))?;
+    sock.connect(endpoint)
+        .map_err(|e| InternalError(format!("Failed to connect socket to endpoint : {}", e)))?;
+    sock.set_rcvtimeo(GATEWAY_TIMEOUT)
+        .map_err(|e| InternalError(format!("Failed to set socket receive timeout : {}", e)))?;
+    sock.set_sndtimeo(GATEWAY_TIMEOUT)
+        .map_err(|e| InternalError(format!("Failed to set socket send timeout : {}", e)))?;
+    Ok(sock)
+}
+
 impl TransactionHandler for CCTransactionHandler {
     fn family_name(&self) -> String {
         NAMESPACE.into()
@@ -2190,19 +2254,11 @@ impl TransactionHandler for CCTransactionHandler {
         let params = params_from_bytes(&request.payload)
             .map_err(|e| InvalidTransaction(format!("Malformed payload : {}", e)))?;
         let command = CCCommand::try_from(params)?;
-        let sock = self
-            .zmq_context
-            .socket(zmq::SocketType::REQ)
-            .map_err(|e| InternalError(format!("Failed to create socket : {}", e)))?;
-        sock.connect(&self.gateway_endpoint)
-            .map_err(|e| InternalError(format!("Failed to connect socket to gateway : {}", e)))?;
-        sock.set_rcvtimeo(GATEWAY_TIMEOUT)
-            .map_err(|e| InternalError(format!("Failed to set socket receive timeout : {}", e)))?;
-        sock.set_sndtimeo(GATEWAY_TIMEOUT)
-            .map_err(|e| InternalError(format!("Failed to set socket send timeout : {}", e)))?;
+        let sock = create_socket(&self.zmq_context, &self.gateway_endpoint)?;
         let mut handler_context = HandlerContext::builder()
             .gateway_context(self.zmq_context.clone())
             .local_gateway_sock(sock)
+            .gateway_endpoint(self.gateway_endpoint.clone())
             .settings(self.settings.clone())
             .build();
         command.execute(request, context, &mut handler_context)?;
