@@ -230,40 +230,38 @@ impl Deref for Settings {
 pub(crate) struct SettingsUpdater {
     handle: Option<JoinHandle<()>>,
     pub(crate) sender: mpsc::Sender<()>,
-    _tx_ctx: EmptyTransactionContext,
-}
-
-fn updater_should_stop(receiver: &mpsc::Receiver<()>) -> bool {
-    match receiver.try_recv() {
-        Ok(_) => {
-            log::warn!("Received stop command");
-            true
-        }
-        Err(mpsc::TryRecvError::Disconnected) => {
-            log::error!("other end of channel disconnected!");
-            true
-        }
-        Err(mpsc::TryRecvError::Empty) => false,
-    }
-}
-
-fn update_settings(tx_ctx: &EmptyTransactionContext, settings: &Settings) -> Result<()> {
-    info!("updating settings");
-    use sawtooth_sdk::messages::Message;
-    filter(tx_ctx, SETTINGS_NAMESPACE, |_, proto| {
-        let setting = sawtooth_sdk::messages::setting::Setting::parse_from_bytes(&proto)
-            .map_err(|e| InternalError(format!("Failed to parse setting from bytes: {}", e)))?;
-
-        for entry in setting.entries {
-            settings.insert(entry.key, entry.value);
-        }
-        Ok(())
-    })?;
-
-    Ok(())
+    _tx_ctx: Arc<EmptyTransactionContext>,
 }
 
 impl SettingsUpdater {
+    fn should_stop(receiver: &mpsc::Receiver<()>) -> bool {
+        match receiver.try_recv() {
+            Ok(_) => {
+                log::warn!("Received stop command");
+                true
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                log::error!("other end of channel disconnected!");
+                true
+            }
+            Err(mpsc::TryRecvError::Empty) => false,
+        }
+    }
+    fn update_settings(tx_ctx: &EmptyTransactionContext, settings: &Settings) -> Result<()> {
+        info!("updating settings");
+        use sawtooth_sdk::messages::Message;
+        filter(tx_ctx, SETTINGS_NAMESPACE, |_, proto| {
+            let setting = sawtooth_sdk::messages::setting::Setting::parse_from_bytes(&proto)
+                .map_err(|e| InternalError(format!("Failed to parse setting from bytes: {}", e)))?;
+
+            for entry in setting.entries {
+                settings.insert(entry.key, entry.value);
+            }
+            Ok(())
+        })?;
+
+        Ok(())
+    }
     fn new(tx_ctx: EmptyTransactionContext, settings: Settings) -> Self {
         let (sender, receiver) = mpsc::channel();
         let tx_ctx = Arc::new(tx_ctx);
@@ -271,17 +269,17 @@ impl SettingsUpdater {
         let ctx_copy = Arc::clone(&tx_ctx);
 
         let handle = thread::spawn(move || 'outer: loop {
-            if updater_should_stop(&receiver) {
+            if SettingsUpdater::should_stop(&receiver) {
                 log::warn!("stopping settings updater");
                 break;
             }
             thread::sleep(Duration::from_secs(6));
-            if let Err(e) = update_settings(&tx_ctx, &settings) {
+            if let Err(e) = SettingsUpdater::update_settings(&tx_ctx, &settings) {
                 log::error!("Error occurred while updating settings: {}", e);
             }
             for _ in 0..10 {
                 thread::sleep(Duration::from_secs(6));
-                if updater_should_stop(&receiver) {
+                if SettingsUpdater::should_stop(&receiver) {
                     log::warn!("stopping settings updater");
                     break 'outer;
                 }
