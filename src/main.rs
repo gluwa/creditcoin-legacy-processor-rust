@@ -1,4 +1,4 @@
-#![warn(clippy::pedantic)]
+// #![warn(clippy::pedantic)]
 
 pub mod ext;
 pub mod handler;

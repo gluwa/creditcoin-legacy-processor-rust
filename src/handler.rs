@@ -1,315 +1,48 @@
+pub mod constants;
+pub mod settings;
+pub mod types;
+pub mod utils;
+
 use crate::{
+    bail_transaction,
     ext::{IntegerExt, MessageExt},
-    protos,
+    handler::utils::{
+        add_fee, get_integer, get_integer_string, get_signed_integer, get_string, get_u64,
+        last_block,
+    },
+    protos, string,
 };
+use constants::*;
 use log::{debug, info};
 use rug::{Assign, Integer};
 use sawtooth_sdk::{
     messages::processor::TpProcessRequest,
     processor::{
         handler::{ApplyError, TransactionContext, TransactionHandler},
-        EmptyTransactionContext, TransactionProcessor,
+        TransactionProcessor,
     },
 };
-use sha2::{Digest, Sha512};
-use std::{
-    convert::TryFrom,
-    default::Default,
-    mem,
-    ops::Deref,
-    sync::{mpsc, Arc},
-    thread::{self, JoinHandle},
-    time::Duration,
-};
+use settings::*;
+use std::{convert::TryFrom, default::Default, mem, ops::Deref};
+use types::*;
 use ApplyError::{InternalError, InvalidTransaction};
 
-use dashmap::DashMap;
-use derive_more::{From, Into};
 use enum_dispatch::enum_dispatch;
-use once_cell::sync::Lazy;
 use serde_cbor::Value;
-use shrinkwraprs::Shrinkwrap;
-use std::collections::BTreeMap;
-use std::fmt::Write;
+
 use std::str;
 
-use zmq::Socket;
-
-use crate::protos::{DealOrder, Fee, RepaymentOrder, Wallet};
+use crate::protos::{DealOrder, RepaymentOrder, Wallet};
 use prost::Message;
 use typed_builder::TypedBuilder;
 
-const NAMESPACE: &str = "CREDITCOIN";
-const NAMESPACE_PREFIX_LENGTH: usize = 6;
-const MERKLE_ADDRESS_LENGTH: usize = 70;
-const PREFIX_LENGTH: usize = 4;
-const WALLET: &str = "0000";
-const ADDR: &str = "1000";
-const TRANSFER: &str = "2000";
-const ASK_ORDER: &str = "3000";
-const BID_ORDER: &str = "4000";
-const DEAL_ORDER: &str = "5000";
-const REPAYMENT_ORDER: &str = "6000";
-const OFFER: &str = "7000";
-const ERC20: &str = "8000";
-const PROCESSED_BLOCK: &str = "9000";
-const FEE: &str = "0100";
-const SETTINGS_NAMESPACE: &str = "000000";
-
-const PROCESSED_BLOCK_ID: &str = "000000000000000000000000000000000000000000000000000000000000";
-
-const INTEREST_MULTIPLIER: u64 = 1000000;
-const CONFIRMATION_COUNT: u64 = 30;
-const YEAR_OF_BLOCKS: u64 = 60 * 24 * 365;
-
-const BLOCKS_IN_PERIOD_UPDATE1: u64 = 2500000;
-
-const BLOCK_REWARD_PROCESSING_COUNT: u64 = 10;
-
-const SKIP_TO_GET_60: usize = 512 / 8 * 2 - 60; // 512 - hash size in bits, 8 - bits in byte, 2 - hex digits for byte, 60 - merkle address length (70) without namespace length (6) and prexix length (4)
-
-const DEAL_EXP_FIX_BLOCK: u64 = 278890;
-
-const GATEWAY_TIMEOUT: i32 = 500000;
-
-// For debugging
-// const GATEWAY_TIMEOUT: i32 = 10000;
-
-static NAMESPACE_PREFIX: Lazy<String> = Lazy::new(|| {
-    let ns = sha512(NAMESPACE);
-    String::from(&ns[..NAMESPACE_PREFIX_LENGTH])
-});
-
-static DEAL_ORDER_PREFIX: Lazy<String> = Lazy::new(|| {
-    let mut s = NAMESPACE_PREFIX.clone();
-    s.push_str(DEAL_ORDER);
-    s
-});
-
-static REPAYMENT_ORDER_PREFIX: Lazy<String> = Lazy::new(|| {
-    let mut s = NAMESPACE_PREFIX.clone();
-    s.push_str(REPAYMENT_ORDER);
-    s
-});
-
-const TX_FEE_STRING: &str = "10000000000000000";
-
-static TX_FEE: Lazy<Integer> = Lazy::new(|| Integer::from_str_radix(TX_FEE_STRING, 10).unwrap());
-
-const REWARD_AMOUNT_STRING: &str = "222000000000000000000";
-
-static REWARD_AMOUNT: Lazy<Integer> =
-    Lazy::new(|| Integer::from_str_radix(REWARD_AMOUNT_STRING, 10).unwrap());
-
-macro_rules! bail_transaction {
-    ($s: literal) => {
-        return core::result::Result::Err(
-            sawtooth_sdk::processor::handler::ApplyError::InvalidTransaction($s.into()),
-        );
-    };
-    ($s: expr) => {
-        return core::result::Result::Err(
-            sawtooth_sdk::processor::handler::ApplyError::InvalidTransaction($s),
-        );
-    };
-    ($s: literal, $($t: tt),*) => {
-        return core::result::Result::Err(
-            sawtooth_sdk::processor::handler::ApplyError::InvalidTransaction(format!($s, $($t),*)),
-        );
-    };
-}
-
-macro_rules! string {
-    ($($s: expr),+ $(,)?) => {
-        {
-            let mut capacity = 0;
-            $( capacity += $s.len(); )*
-
-            let mut string = ::std::string::String::with_capacity(capacity);
-            $(
-                string.push_str(&*$s);
-            )*
-            string
-        }
-    };
-}
-
-type Result<T, E = ApplyError> = std::result::Result<T, E>;
-
-#[derive(Shrinkwrap, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Default)]
-pub struct SigHash(String);
-
-impl SigHash {
-    fn to_wallet_id(&self) -> WalletId {
-        let wallet_id = string!(NAMESPACE_PREFIX, WALLET, self);
-        wallet_id.into()
-    }
-}
-#[derive(Shrinkwrap, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Default)]
-pub struct WalletId(String);
-
-impl From<&SigHash> for WalletId {
-    fn from(sig: &SigHash) -> Self {
-        let buf = string!(NAMESPACE_PREFIX, WALLET, sig.as_str());
-        WalletId(buf)
-    }
-}
-
-impl AsRef<str> for WalletId {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-#[derive(Shrinkwrap, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Default)]
-pub struct Guid(String);
-
-#[derive(Shrinkwrap, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Default)]
-pub struct Address(String);
-
-impl Address {
-    fn with_prefix_key(prefix: &str, key: &str) -> Self {
-        let id = sha512_id(key);
-        let addr = string!(NAMESPACE_PREFIX, prefix, &id);
-        assert_eq!(addr.len(), MERKLE_ADDRESS_LENGTH);
-        Self(addr)
-    }
-}
-
-impl AsRef<str> for Address {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-#[derive(Shrinkwrap, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Default)]
-pub struct State(Vec<u8>);
-
-impl AsRef<[u8]> for State {
-    fn as_ref(&self) -> &[u8] {
-        self.as_slice()
-    }
-}
-
-type StateVec = Vec<(String, Vec<u8>)>;
-
-// #[derive(Shrinkwrap, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Default)]
-// #[from(forward)]
-// pub struct BlockNum(Integer);
-
-pub type BlockNum = Integer;
-
-struct Settings {
-    inner: Arc<DashMap<String, String>>,
-}
-
-impl Settings {
-    fn new() -> Self {
-        Self {
-            inner: Arc::new(DashMap::new()),
-        }
-    }
-}
-
-impl Clone for Settings {
-    fn clone(&self) -> Self {
-        Self {
-            inner: Arc::clone(&self.inner),
-        }
-    }
-}
-
-impl Deref for Settings {
-    type Target = DashMap<String, String>;
-
-    fn deref(&self) -> &Self::Target {
-        &*self.inner
-    }
-}
-
-pub(crate) struct SettingsUpdater {
-    handle: Option<JoinHandle<()>>,
-    pub(crate) sender: mpsc::Sender<()>,
-    _tx_ctx: Arc<EmptyTransactionContext>,
-}
-
-impl SettingsUpdater {
-    fn should_stop(receiver: &mpsc::Receiver<()>) -> bool {
-        match receiver.try_recv() {
-            Ok(_) => {
-                log::warn!("Received stop command");
-                true
-            }
-            Err(mpsc::TryRecvError::Disconnected) => {
-                log::error!("other end of channel disconnected!");
-                true
-            }
-            Err(mpsc::TryRecvError::Empty) => false,
-        }
-    }
-    fn update_settings(tx_ctx: &EmptyTransactionContext, settings: &Settings) -> Result<()> {
-        info!("updating settings");
-        use sawtooth_sdk::messages::Message;
-        filter(tx_ctx, SETTINGS_NAMESPACE, |_, proto| {
-            let setting = sawtooth_sdk::messages::setting::Setting::parse_from_bytes(&proto)
-                .map_err(|e| InternalError(format!("Failed to parse setting from bytes: {}", e)))?;
-
-            for entry in setting.entries {
-                settings.insert(entry.key, entry.value);
-            }
-            Ok(())
-        })?;
-
-        Ok(())
-    }
-    fn new(tx_ctx: EmptyTransactionContext, settings: Settings) -> Self {
-        let (sender, receiver) = mpsc::channel();
-        let tx_ctx = Arc::new(tx_ctx);
-
-        let ctx_copy = Arc::clone(&tx_ctx);
-
-        let handle = thread::spawn(move || 'outer: loop {
-            if SettingsUpdater::should_stop(&receiver) {
-                log::warn!("stopping settings updater");
-                break;
-            }
-            thread::sleep(Duration::from_secs(6));
-            if let Err(e) = SettingsUpdater::update_settings(&tx_ctx, &settings) {
-                log::error!("Error occurred while updating settings: {}", e);
-            }
-            for _ in 0..10 {
-                thread::sleep(Duration::from_secs(6));
-                if SettingsUpdater::should_stop(&receiver) {
-                    log::warn!("stopping settings updater");
-                    break 'outer;
-                }
-            }
-        });
-
-        Self {
-            sender,
-            handle: Some(handle),
-            _tx_ctx: ctx_copy,
-        }
-    }
-
-    pub(crate) fn exit(&self) {
-        self.sender.send(()).unwrap();
-    }
-}
-
-impl Drop for SettingsUpdater {
-    fn drop(&mut self) {
-        log::warn!("dropping settings updater");
-        self.sender.send(()).unwrap();
-        log::warn!("joining updater thread");
-        self.handle.take().unwrap().join().unwrap();
-    }
-}
+use self::utils::{
+    add_fee_state, add_state, calc_interest, get_state_data, sha512_id, try_get_state_data,
+};
 
 #[enum_dispatch]
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-enum CCCommand {
+pub enum CCCommand {
     SendFunds,
     RegisterAddress,
     RegisterTransfer,
@@ -329,27 +62,27 @@ enum CCCommand {
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct SendFunds {
+pub struct SendFunds {
     amount: Integer,
     sighash: SigHash,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct RegisterAddress {
+pub struct RegisterAddress {
     blockchain: String,
     address: String,
     network: String,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct RegisterTransfer {
+pub struct RegisterTransfer {
     gain: Integer,
     order_id: String,
     blockchain_tx_id: String,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct AddAskOrder {
+pub struct AddAskOrder {
     address_id: String,
     amount_str: String,
     interest: String,
@@ -359,7 +92,7 @@ struct AddAskOrder {
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct AddBidOrder {
+pub struct AddBidOrder {
     address_id: String,
     amount_str: String,
     interest: String,
@@ -369,43 +102,43 @@ struct AddBidOrder {
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct AddOffer {
+pub struct AddOffer {
     ask_order_id: String,
     bid_order_id: String,
     expiration: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct AddDealOrder {
+pub struct AddDealOrder {
     offer_id: String,
     expiration: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct CompleteDealOrder {
+pub struct CompleteDealOrder {
     deal_order_id: String,
     transfer_id: String,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct LockDealOrder {
+pub struct LockDealOrder {
     deal_order_id: String,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct CloseDealOrder {
-    deal_order_id: String,
-    transfer_id: String,
-}
-
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct Exempt {
+pub struct CloseDealOrder {
     deal_order_id: String,
     transfer_id: String,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct AddRepaymentOrder {
+pub struct Exempt {
+    deal_order_id: String,
+    transfer_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub struct AddRepaymentOrder {
     deal_order_id: String,
     address_id: String,
     amount: String,
@@ -413,99 +146,32 @@ struct AddRepaymentOrder {
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct CompleteRepaymentOrder {
+pub struct CompleteRepaymentOrder {
     repayment_order_id: String,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct CloseRepaymentOrder {
+pub struct CloseRepaymentOrder {
     repayment_order_id: String,
     transfer_id: String,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct CollectCoins {
+pub struct CollectCoins {
     eth_address: String,
     amount: Integer,
     blockchain_tx_id: String,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-struct Housekeeping {
+pub struct Housekeeping {
     block_idx: Integer,
-}
-
-fn get_string<'a>(map: &'a BTreeMap<Value, Value>, key: &str, name: &str) -> Result<&'a String> {
-    match map.get(&Value::Text(key.into())) {
-        Some(value) => {
-            if let Value::Text(s) = value {
-                Ok(s)
-            } else {
-                bail_transaction!("Value for {} was not a string, found : {:?}", name, value)
-            }
-        }
-        None => {
-            bail_transaction!("Expecting {}", name)
-        }
-    }
-}
-
-fn get_integer_string<'a>(
-    map: &'a BTreeMap<Value, Value>,
-    key: &str,
-    name: &str,
-) -> Result<&'a String> {
-    let s = get_string(map, key, name)?;
-    Integer::try_parse(s)?;
-    Ok(s)
-}
-
-fn get_integer(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> Result<Integer> {
-    let str_value = get_string(map, key, name)?;
-    Integer::try_parse(str_value)
-}
-
-fn get_signed_integer(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> Result<Integer> {
-    let str_value = get_string(map, key, name)?;
-    Integer::try_parse_signed(str_value)
-}
-
-fn get_u64(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> Result<u64> {
-    let str_value = get_string(map, key, name)?;
-    str_value
-        .parse()
-        .map_err(|_| InvalidTransaction("Invalid number".into()))
-}
-
-fn to_hex_string(bytes: &[u8]) -> String {
-    let mut buf = String::with_capacity(2 * bytes.len());
-    for b in bytes {
-        write!(buf, "{:02x}", b).unwrap();
-    }
-    buf
-}
-
-pub fn sha512_id<B: AsRef<[u8]>>(bytes: B) -> String {
-    let res = sha512(bytes);
-    let ret = &res[SKIP_TO_GET_60..];
-    assert_eq!(
-        ret.len(),
-        MERKLE_ADDRESS_LENGTH - NAMESPACE_PREFIX_LENGTH - PREFIX_LENGTH
-    );
-    ret.to_owned()
-}
-
-fn sha512<B: AsRef<[u8]>>(bytes: B) -> String {
-    let mut hasher = Sha512::new();
-    hasher.update(bytes);
-    let result = hasher.finalize();
-    to_hex_string(&result)
 }
 
 impl TryFrom<Value> for CCCommand {
     type Error = ApplyError;
 
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
+    fn try_from(value: Value) -> TxnResult<Self, Self::Error> {
         if let Value::Map(map) = value {
             let verb = get_string(&map, "v", "verb")?;
             debug!("verb = {}", verb);
@@ -684,97 +350,7 @@ impl TryFrom<Value> for CCCommand {
     }
 }
 
-fn is_hex(s: &str) -> bool {
-    s.contains(|c: char| !(c.is_numeric() || ('a'..'f').contains(&c) || ('A'..'F').contains(&c)))
-}
-
-pub fn compress(uncompressed: &str) -> Result<SigHash> {
-    let marker = &uncompressed[..2];
-    if uncompressed.len() == 2 * (1 + 2 * 32) && is_hex(uncompressed) && marker == "04" {
-        let x = &uncompressed[2..][..(2 * 32)];
-        let y_last = &uncompressed[2 * (1 + 32 + 31)..][..2];
-        let last = i32::from_str_radix(y_last, 16)
-            .map_err(|_| InvalidTransaction("Unexpected public key format".into()))?;
-        let mut compressed = String::with_capacity(2 + x.len());
-
-        if last % 2 == 1 {
-            compressed.push_str("03");
-        } else {
-            compressed.push_str("02");
-        }
-        compressed.push_str(x);
-        Ok(SigHash(compressed))
-    } else if (marker == "02" || marker == "03") && uncompressed.len() == 66 {
-        Ok(SigHash(uncompressed.to_owned()))
-    } else {
-        Err(InvalidTransaction("Unexpected public key format".into()))
-    }
-}
-
-fn last_block(request: &TpProcessRequest) -> BlockNum {
-    // TODO: transitioning
-    let tip = request.get_tip();
-    if tip == 0 {
-        log::warn!("tip was 0");
-        Integer::new()
-    } else {
-        Integer::from(tip - 1)
-    }
-}
-
-fn get_state_data<A: AsRef<str>>(tx_ctx: &dyn TransactionContext, address: A) -> Result<State> {
-    let address = address.as_ref();
-    let state_data = tx_ctx
-        .get_state_entry(address)?
-        .ok_or_else(|| InvalidTransaction(format!("Existing state expected {}", address)))?;
-    Ok(state_data.into())
-}
-
-fn try_get_state_data<A: AsRef<str>>(
-    tx_ctx: &dyn TransactionContext,
-    address: A,
-) -> Result<Option<State>> {
-    let address = address.as_ref();
-    Ok(tx_ctx.get_state_entry(address)?.map(Into::into))
-}
-
-fn add_state<M: Message>(states: &mut StateVec, id: String, message: &M) -> Result<()> {
-    let mut buf = Vec::with_capacity(message.encoded_len());
-    message
-        .encode(&mut buf)
-        .map_err(|e| InvalidTransaction(format!("Failed to add state : {}", e)))?;
-    states.push((id, buf));
-    Ok(())
-}
-
-fn add_fee(
-    ctx: &mut HandlerContext,
-    request: &TpProcessRequest,
-    sighash: &SigHash,
-    states: &mut StateVec,
-) -> Result<()> {
-    let guid = ctx.guid(request);
-    let fee_id = Address::with_prefix_key(FEE, guid.as_str());
-    let fee = Fee {
-        sighash: sighash.clone().into(),
-        block: last_block(request).to_string_radix(10),
-    };
-    add_state(states, fee_id.into(), &fee)
-}
-
-fn add_fee_state(
-    ctx: &mut HandlerContext,
-    request: &TpProcessRequest,
-    sighash: &SigHash,
-    states: &mut StateVec,
-    wallet_id: &WalletId,
-    wallet: &Wallet,
-) -> Result<()> {
-    add_fee(ctx, request, sighash, states)?;
-    add_state(states, wallet_id.clone().into(), wallet)
-}
-
-fn charge(txn_ctx: &dyn TransactionContext, sighash: &SigHash) -> Result<(WalletId, Wallet)> {
+fn charge(txn_ctx: &dyn TransactionContext, sighash: &SigHash) -> TxnResult<(WalletId, Wallet)> {
     let wallet_id = WalletId::from(sighash);
     let state_data = get_state_data(txn_ctx, &wallet_id)?;
     let mut wallet = Wallet::try_parse(&state_data)?;
@@ -788,9 +364,12 @@ fn charge(txn_ctx: &dyn TransactionContext, sighash: &SigHash) -> Result<(Wallet
     Ok((wallet_id, wallet))
 }
 
-fn try_verify_external(ctx: &mut HandlerContext, gateway_command: &str) -> Result<Option<String>> {
+fn try_verify_external(
+    ctx: &mut HandlerContext,
+    gateway_command: &str,
+) -> TxnResult<Option<String>> {
     log::warn!("Falling back to external gateway");
-    let new_local_sock = create_socket(&ctx.gateway_context, &ctx.gateway_endpoint)?;
+    let new_local_sock = utils::create_socket(&ctx.gateway_context, &ctx.gateway_endpoint)?;
     mem::drop(mem::replace(&mut ctx.local_gateway_sock, new_local_sock));
 
     let address = ctx
@@ -805,7 +384,8 @@ fn try_verify_external(ctx: &mut HandlerContext, gateway_command: &str) -> Resul
             external_gateway_address.insert_str(0, "tcp://");
         }
 
-        let external_gateway_sock = create_socket(&ctx.gateway_context, &external_gateway_address)?;
+        let external_gateway_sock =
+            utils::create_socket(&ctx.gateway_context, &external_gateway_address)?;
         external_gateway_sock
             .send(gateway_command, 0)
             .map_err(|e| {
@@ -829,7 +409,7 @@ fn try_verify_external(ctx: &mut HandlerContext, gateway_command: &str) -> Resul
     }
 }
 
-fn verify(ctx: &mut HandlerContext, gateway_command: &str) -> Result<()> {
+fn verify(ctx: &mut HandlerContext, gateway_command: &str) -> TxnResult<()> {
     ctx.local_gateway_sock
         .send(gateway_command, 0)
         .map_err(|e| InternalError(format!("Failed to send command to gateway : {}", e)))?;
@@ -869,7 +449,7 @@ trait CCTransaction: Sized {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()>;
+    ) -> TxnResult<()>;
 }
 
 impl CCTransaction for SendFunds {
@@ -878,7 +458,7 @@ impl CCTransaction for SendFunds {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
         if self.sighash == my_sighash {
             bail_transaction!("Invalid destination");
@@ -934,7 +514,7 @@ impl CCTransaction for RegisterAddress {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let addr_str_lower = self.address.to_lowercase();
 
         let my_sighash = ctx.sighash(request)?;
@@ -970,7 +550,7 @@ impl CCTransaction for RegisterTransfer {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let RegisterTransfer {
             gain,
             order_id,
@@ -1073,7 +653,7 @@ impl CCTransaction for AddAskOrder {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let AddAskOrder {
             address_id,
             amount_str,
@@ -1126,7 +706,7 @@ impl CCTransaction for AddBidOrder {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
         let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
@@ -1171,7 +751,7 @@ impl CCTransaction for AddOffer {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
         let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
@@ -1270,7 +850,7 @@ impl CCTransaction for AddDealOrder {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let id = Address::with_prefix_key(DEAL_ORDER, &self.offer_id);
 
         let state_data = try_get_state_data(tx_ctx, &id)?;
@@ -1355,7 +935,7 @@ impl CCTransaction for CompleteDealOrder {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
         let state_data = get_state_data(tx_ctx, &self.deal_order_id)?;
@@ -1443,7 +1023,7 @@ impl CCTransaction for LockDealOrder {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
         let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
@@ -1475,25 +1055,13 @@ impl CCTransaction for LockDealOrder {
     }
 }
 
-fn calc_interest(amount: &Integer, ticks: &Integer, interest: &Integer) -> Integer {
-    let mut total = amount.clone();
-    let mut i = Integer::from(0);
-
-    while &i < ticks {
-        let compound = (total.clone() * interest) / INTEREST_MULTIPLIER;
-        total += compound;
-        i += 1;
-    }
-    total
-}
-
 impl CCTransaction for CloseDealOrder {
     fn execute(
         self,
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
         let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
@@ -1567,7 +1135,7 @@ impl CCTransaction for Exempt {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
         let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
@@ -1616,7 +1184,7 @@ impl CCTransaction for AddRepaymentOrder {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
         let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
@@ -1686,7 +1254,7 @@ impl CCTransaction for CompleteRepaymentOrder {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
         let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
@@ -1726,7 +1294,7 @@ impl CCTransaction for CloseRepaymentOrder {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
         let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
@@ -1783,7 +1351,7 @@ impl CCTransaction for CollectCoins {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let id = Address::with_prefix_key(ERC20, &self.blockchain_tx_id);
         let state_data = try_get_state_data(tx_ctx, &id)?;
 
@@ -1843,7 +1411,7 @@ fn award(
     new_formula: bool,
     block_idx: &Integer,
     signer: &str,
-) -> Result<()> {
+) -> TxnResult<()> {
     let mut buf = Integer::new();
     let mut reward = Integer::new();
 
@@ -1881,7 +1449,7 @@ fn award(
     let reward_str = reward.to_string();
 
     if reward > 0 {
-        let signer_sighash = sha512_id(signer.as_bytes());
+        let signer_sighash = utils::sha512_id(signer.as_bytes());
         let wallet_id = string!(NAMESPACE_PREFIX.as_str(), WALLET, &signer_sighash);
         let state_data = try_get_state_data(tx_ctx, &wallet_id)?.unwrap_or_default();
 
@@ -1910,7 +1478,7 @@ fn reward(
     ctx: &mut HandlerContext,
     processed_block_idx: &Integer,
     up_to_block_idx: &Integer,
-) -> Result<()> {
+) -> TxnResult<()> {
     assert!(up_to_block_idx == &0 || up_to_block_idx > processed_block_idx);
 
     let mut new_formula = false;
@@ -1969,7 +1537,7 @@ fn reward(
 }
 
 #[allow(dead_code)]
-fn do_update_settings() -> Result<()> {
+fn do_update_settings() -> TxnResult<()> {
     // how often should this be called?
     todo!()
 }
@@ -1977,8 +1545,8 @@ fn do_update_settings() -> Result<()> {
 fn filter(
     tx_ctx: &dyn TransactionContext,
     prefix: &str,
-    mut lister: impl FnMut(&str, &[u8]) -> Result<()>,
-) -> Result<()> {
+    mut lister: impl FnMut(&str, &[u8]) -> TxnResult<()>,
+) -> TxnResult<()> {
     // TODO: Transitioning
 
     let states = tx_ctx.get_state_entries_by_prefix(prefix)?;
@@ -1995,7 +1563,7 @@ impl CCTransaction for Housekeeping {
         request: &TpProcessRequest,
         tx_ctx: &dyn TransactionContext,
         ctx: &mut HandlerContext,
-    ) -> Result<()> {
+    ) -> TxnResult<()> {
         let Housekeeping { block_idx } = self;
 
         let processed_block_idx = string!(
@@ -2154,30 +1722,30 @@ impl CCTransaction for Housekeeping {
 
 #[allow(dead_code)]
 #[derive(TypedBuilder)]
-struct HandlerContext {
-    #[builder(default)]
-    sighash: Option<SigHash>,
-    #[builder(default)]
-    guid: Option<Guid>,
+pub struct HandlerContext {
+    // #[builder(default)]
+    // sighash: Option<SigHash>,
+    // #[builder(default)]
+    // guid: Option<Guid>,
     #[builder(default = 0)]
     tip: u64,
-    #[builder(default = false)]
-    replaying: bool,
-    #[builder(default = false)]
-    transitioning: bool,
-    #[builder(default)]
-    current_state: BTreeMap<State, State>,
+    // #[builder(default = false)]
+    // replaying: bool,
+    // #[builder(default = false)]
+    // transitioning: bool,
+    // #[builder(default)]
+    // current_state: BTreeMap<State, State>,
     gateway_context: zmq::Context,
-    local_gateway_sock: Socket,
+    local_gateway_sock: zmq::Socket,
     settings: Settings,
     gateway_endpoint: String,
 }
 
 impl HandlerContext {
-    fn sighash(&self, request: &TpProcessRequest) -> Result<SigHash> {
+    fn sighash(&self, request: &TpProcessRequest) -> TxnResult<SigHash> {
         // TODO: transitioning
         let signer = request.get_header().get_signer_public_key();
-        let compressed = compress(signer)?;
+        let compressed = utils::compress(signer)?;
         let hash = sha512_id(compressed.as_bytes());
         Ok(SigHash(hash))
     }
@@ -2210,24 +1778,6 @@ impl CCTransactionHandler {
     }
 }
 
-fn params_from_bytes(bytes: &[u8]) -> anyhow::Result<Value> {
-    let res = serde_cbor::from_slice(bytes)?;
-    Ok(res)
-}
-
-fn create_socket(zmq_context: &zmq::Context, endpoint: &str) -> Result<Socket> {
-    let sock = zmq_context
-        .socket(zmq::SocketType::REQ)
-        .map_err(|e| InternalError(format!("Failed to create socket : {}", e)))?;
-    sock.connect(endpoint)
-        .map_err(|e| InternalError(format!("Failed to connect socket to endpoint : {}", e)))?;
-    sock.set_rcvtimeo(GATEWAY_TIMEOUT)
-        .map_err(|e| InternalError(format!("Failed to set socket receive timeout : {}", e)))?;
-    sock.set_sndtimeo(GATEWAY_TIMEOUT)
-        .map_err(|e| InternalError(format!("Failed to set socket send timeout : {}", e)))?;
-    Ok(sock)
-}
-
 impl TransactionHandler for CCTransactionHandler {
     fn family_name(&self) -> String {
         NAMESPACE.into()
@@ -2254,11 +1804,11 @@ impl TransactionHandler for CCTransactionHandler {
         &self,
         request: &TpProcessRequest,
         context: &mut dyn TransactionContext,
-    ) -> Result<()> {
-        let params = params_from_bytes(&request.payload)
+    ) -> TxnResult<()> {
+        let params = utils::params_from_bytes(&request.payload)
             .map_err(|e| InvalidTransaction(format!("Malformed payload : {}", e)))?;
         let command = CCCommand::try_from(params)?;
-        let sock = create_socket(&self.zmq_context, &self.gateway_endpoint)?;
+        let sock = utils::create_socket(&self.zmq_context, &self.gateway_endpoint)?;
         let mut handler_context = HandlerContext::builder()
             .gateway_context(self.zmq_context.clone())
             .local_gateway_sock(sock)
