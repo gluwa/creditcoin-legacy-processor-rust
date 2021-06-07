@@ -1,4 +1,4 @@
-// #![warn(clippy::pedantic)]
+#![allow(clippy::suspicious_operation_groupings)]
 
 pub mod ext;
 pub mod handler;

@@ -436,9 +436,9 @@ fn verify(ctx: &mut HandlerContext, gateway_command: &str) -> TxnResult<()> {
             "Gateway failed to validate transaction, got response: {}",
             response
         );
-        Err(InvalidTransaction(format!(
-            "Couldn't validate the transaction"
-        )))
+        Err(InvalidTransaction(
+            "Couldn't validate the transaction".into(),
+        ))
     }
 }
 
@@ -1427,7 +1427,7 @@ fn award(
         let pos = fraction_str.find('.').unwrap();
         assert!(pos > 0);
 
-        let fraction_in_wei_str = if fraction_str.chars().next().unwrap() != '0' {
+        let fraction_in_wei_str = if fraction_str.starts_with('0') {
             format!("{}{:0<18}", &fraction_str[..pos], &fraction_str[pos + 1..])
         } else {
             let mut pos = 2;
@@ -1479,6 +1479,7 @@ fn reward(
     processed_block_idx: &Integer,
     up_to_block_idx: &Integer,
 ) -> TxnResult<()> {
+    info!("rewarding!");
     assert!(up_to_block_idx == &0 || up_to_block_idx > processed_block_idx);
 
     let mut new_formula = false;
@@ -1511,6 +1512,8 @@ fn reward(
 
             let signer = tx_ctx.get_sig_by_num(height)?;
 
+            info!("rewarding signer {} for block {}", signer, height);
+
             award(tx_ctx, new_formula, &i, &signer)?;
             i += 1;
         }
@@ -1526,6 +1529,8 @@ fn reward(
 
         let signatures = tx_ctx.get_reward_block_signatures(sig, first, last)?;
 
+        info!("Rewarding {} signatures", signatures.len());
+
         let mut i = last_block_idx;
         for signature in &signatures {
             award(tx_ctx, new_formula, &i, &signature)?;
@@ -1534,12 +1539,6 @@ fn reward(
     }
 
     Ok(())
-}
-
-#[allow(dead_code)]
-fn do_update_settings() -> TxnResult<()> {
-    // how often should this be called?
-    todo!()
 }
 
 fn filter(
@@ -1659,7 +1658,7 @@ impl CCTransaction for Housekeeping {
             let start = Integer::try_parse(&deal_order.block)?;
             elapsed_buf.assign(&block_idx - &start);
             if deal_order.expiration < elapsed_buf && deal_order.loan_transfer.is_empty() {
-                if ctx.tip == 0 || ctx.tip != 0 && ctx.tip > DEAL_EXP_FIX_BLOCK {
+                if ctx.tip == 0 || ctx.tip > DEAL_EXP_FIX_BLOCK {
                     let wallet_id = string!(NAMESPACE_PREFIX, WALLET, &deal_order.sighash);
                     let state_data = get_state_data(tx_ctx, &wallet_id)?;
                     let mut wallet = protos::Wallet::try_parse(&state_data)?;
