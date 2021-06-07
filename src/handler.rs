@@ -2029,6 +2029,12 @@ impl CCTransaction for Housekeeping {
                     &last_processed_block_idx,
                     &Integer::new(),
                 )?;
+                tx_ctx.set_state_entry(
+                    processed_block_idx,
+                    (last_processed_block_idx + BLOCK_REWARD_PROCESSING_COUNT)
+                        .to_string()
+                        .into_bytes(),
+                )?;
             }
             return Ok(());
         }
