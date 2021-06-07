@@ -6,7 +6,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-use log::info;
+use log::{info, warn};
 use sawtooth_sdk::processor::{handler::ApplyError, EmptyTransactionContext};
 
 use crate::handler::{constants::SETTINGS_NAMESPACE, filter};
@@ -19,6 +19,12 @@ pub struct Settings {
 
 impl Settings {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for Settings {
+    fn default() -> Self {
         Self {
             inner: Arc::new(DashMap::new()),
         }
@@ -44,7 +50,6 @@ impl Deref for Settings {
 pub(crate) struct SettingsUpdater {
     handle: Option<JoinHandle<()>>,
     pub(crate) sender: mpsc::Sender<()>,
-    _tx_ctx: Arc<EmptyTransactionContext>,
 }
 
 impl SettingsUpdater {
@@ -75,14 +80,12 @@ impl SettingsUpdater {
             }
             Ok(())
         })?;
+        info!("finished updating setings");
 
         Ok(())
     }
     pub fn new(tx_ctx: EmptyTransactionContext, settings: Settings) -> Self {
         let (sender, receiver) = mpsc::channel();
-        let tx_ctx = Arc::new(tx_ctx);
-
-        let ctx_copy = Arc::clone(&tx_ctx);
 
         let handle = thread::spawn(move || 'outer: loop {
             if SettingsUpdater::should_stop(&receiver) {
@@ -91,7 +94,7 @@ impl SettingsUpdater {
             }
             thread::sleep(Duration::from_secs(6));
             if let Err(e) = SettingsUpdater::update_settings(&tx_ctx, &settings) {
-                log::error!("Error occurred while updating settings: {}", e);
+                log::warn!("Error occurred while updating settings: {}", e);
             }
             for _ in 0..10 {
                 thread::sleep(Duration::from_secs(6));
@@ -105,19 +108,20 @@ impl SettingsUpdater {
         Self {
             sender,
             handle: Some(handle),
-            _tx_ctx: ctx_copy,
         }
     }
 
     pub fn exit(&self) {
-        self.sender.send(()).unwrap();
+        if let Err(e) = self.sender.send(()) {
+            warn!("send error occurred while exiting: {}", e);
+        }
     }
 }
 
 impl Drop for SettingsUpdater {
     fn drop(&mut self) {
         log::warn!("dropping settings updater");
-        self.sender.send(()).unwrap();
+        self.exit();
         log::warn!("joining updater thread");
         self.handle.take().unwrap().join().unwrap();
     }

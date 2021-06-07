@@ -1772,7 +1772,10 @@ impl CCTransactionHandler {
         Self {
             zmq_context: context,
             gateway_endpoint,
-            updater: SettingsUpdater::new(processor.empty_context(), settings.clone()),
+            updater: SettingsUpdater::new(
+                processor.empty_context(Some(MESSAGE_TIMEOUT)),
+                settings.clone(),
+            ),
             settings,
         }
     }

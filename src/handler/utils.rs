@@ -181,6 +181,8 @@ pub fn create_socket(zmq_context: &zmq::Context, endpoint: &str) -> TxnResult<zm
     sock.set_sndtimeo(GATEWAY_TIMEOUT).map_err(|e| {
         ApplyError::InternalError(format!("Failed to set socket send timeout : {}", e))
     })?;
+    sock.set_linger(0)
+        .map_err(|e| ApplyError::InternalError(format!("Failed to set socket linger : {}", e)))?;
     Ok(sock)
 }
 
