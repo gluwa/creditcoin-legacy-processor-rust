@@ -26,6 +26,8 @@ impl IntegerExt for Integer {}
 use prost::Message;
 pub trait MessageExt<M> {
     fn try_parse<B: AsRef<[u8]>>(b: B) -> Result<M, ApplyError>;
+
+    fn to_bytes(&self) -> Vec<u8>;
 }
 
 impl<M: Message + Default> MessageExt<M> for M {
@@ -33,5 +35,11 @@ impl<M: Message + Default> MessageExt<M> for M {
         M::decode(buf.as_ref()).map_err(|e| {
             ApplyError::InvalidTransaction(format!("Failed to parse protobuf message : {}", e))
         })
+    }
+
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(self.encoded_len());
+        self.encode(&mut buf).unwrap();
+        buf
     }
 }

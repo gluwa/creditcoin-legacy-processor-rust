@@ -1,4 +1,5 @@
 #![allow(clippy::suspicious_operation_groupings)]
+#![cfg_attr(test, allow(unused))]
 
 pub mod ext;
 pub mod handler;
@@ -45,6 +46,26 @@ fn fmt_log(out: FormatCallback, message: &Arguments, record: &Record) {
     ))
 }
 
+fn setup_logs(verbose_count: u64) -> Result<()> {
+    let level = match verbose_count {
+        0 => LevelFilter::Warn,
+        1 => LevelFilter::Info,
+        2 => LevelFilter::Debug,
+        _ => LevelFilter::Trace,
+    };
+
+    Dispatch::new()
+        .level(level)
+        .level_for("sawtooth_sdk::consensus::zmq_driver", LevelFilter::Error)
+        .level_for("sawtooth_sdk::messaging::zmq_stream", LevelFilter::Error)
+        .format(fmt_log)
+        .chain(stdout())
+        .apply()?;
+
+    Ok(())
+}
+
+#[cfg(not(test))]
 fn main() -> Result<()> {
     let matches = clap_app!(consensus_engine =>
       (version: crate_version!())
@@ -59,20 +80,7 @@ fn main() -> Result<()> {
     let endpoint: &str = matches.value_of("endpoint").unwrap_or(DEFAULT_ENDPOINT);
     let gateway: &str = matches.value_of("gateway").unwrap_or(DEFAULT_GATEWAY);
 
-    let level = match matches.occurrences_of("verbose") {
-        0 => LevelFilter::Warn,
-        1 => LevelFilter::Info,
-        2 => LevelFilter::Debug,
-        _ => LevelFilter::Trace,
-    };
-
-    Dispatch::new()
-        .level(level)
-        .level_for("sawtooth_sdk::consensus::zmq_driver", LevelFilter::Error)
-        .level_for("sawtooth_sdk::messaging::zmq_stream", LevelFilter::Error)
-        .format(fmt_log)
-        .chain(stdout())
-        .apply()?;
+    setup_logs(matches.occurrences_of("verbose"))?;
 
     info!("ccprocessor-rust ({})", env!("CARGO_PKG_VERSION"));
 

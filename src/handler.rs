@@ -1,5 +1,7 @@
 pub mod constants;
+pub mod context;
 pub mod settings;
+mod tests;
 pub mod types;
 pub mod utils;
 
@@ -12,6 +14,13 @@ use crate::{
     },
     protos, string,
 };
+
+#[cfg(not(test))]
+use context::HandlerContext;
+
+#[cfg(test)]
+use context::mocked::MockHandlerContext as HandlerContext;
+
 use constants::*;
 use log::{debug, info};
 use rug::{Assign, Integer};
@@ -34,11 +43,8 @@ use std::str;
 
 use crate::protos::{DealOrder, RepaymentOrder, Wallet};
 use prost::Message;
-use typed_builder::TypedBuilder;
 
-use self::utils::{
-    add_fee_state, add_state, calc_interest, get_state_data, sha512_id, try_get_state_data,
-};
+use self::utils::{add_fee_state, add_state, calc_interest, get_state_data, try_get_state_data};
 
 #[enum_dispatch]
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
@@ -369,13 +375,10 @@ fn try_verify_external(
     gateway_command: &str,
 ) -> TxnResult<Option<String>> {
     log::warn!("Falling back to external gateway");
-    let new_local_sock = utils::create_socket(&ctx.gateway_context, &ctx.gateway_endpoint)?;
-    mem::drop(mem::replace(&mut ctx.local_gateway_sock, new_local_sock));
+    let new_local_sock = utils::create_socket(&ctx.gateway_context(), &ctx.gateway_endpoint())?;
+    mem::drop(mem::replace(ctx.local_gateway_sock_mut(), new_local_sock));
 
-    let address = ctx
-        .settings
-        .get("sawtooth.validator.gateway")
-        .map(|s| ToOwned::to_owned(s.as_str()));
+    let address = ctx.get_setting("sawtooth.validator.gateway");
 
     if let Some(mut external_gateway_address) = address {
         log::info!("Found external gateway address");
@@ -385,7 +388,7 @@ fn try_verify_external(
         }
 
         let external_gateway_sock =
-            utils::create_socket(&ctx.gateway_context, &external_gateway_address)?;
+            utils::create_socket(&ctx.gateway_context(), &external_gateway_address)?;
         external_gateway_sock
             .send(gateway_command, 0)
             .map_err(|e| {
@@ -410,10 +413,10 @@ fn try_verify_external(
 }
 
 fn verify(ctx: &mut HandlerContext, gateway_command: &str) -> TxnResult<()> {
-    ctx.local_gateway_sock
+    ctx.local_gateway_sock()
         .send(gateway_command, 0)
         .map_err(|e| InternalError(format!("Failed to send command to gateway : {}", e)))?;
-    let response = ctx.local_gateway_sock.recv_string(0);
+    let response = ctx.local_gateway_sock().recv_string(0);
     let response = match response {
         Ok(Ok(s)) if s.is_empty() || s == "miss" => {
             try_verify_external(ctx, gateway_command)?.unwrap_or(s)
@@ -1451,6 +1454,7 @@ fn award(
     if reward > 0 {
         let signer_sighash = utils::sha512_id(signer.as_bytes());
         let wallet_id = string!(NAMESPACE_PREFIX.as_str(), WALLET, &signer_sighash);
+        info!("checking wallet with id {}", wallet_id);
         let state_data = try_get_state_data(tx_ctx, &wallet_id)?.unwrap_or_default();
 
         let wallet = if state_data.is_empty() {
@@ -1486,7 +1490,7 @@ fn reward(
 
     // TODO: transitioning
 
-    if let Some(val) = ctx.settings.get("sawtooth.validator.update1") {
+    if let Some(val) = ctx.get_setting("sawtooth.validator.update1") {
         let update_block = Integer::try_parse(&*val)?;
         if update_block + 500 < *processed_block_idx {
             new_formula = true;
@@ -1658,7 +1662,7 @@ impl CCTransaction for Housekeeping {
             let start = Integer::try_parse(&deal_order.block)?;
             elapsed_buf.assign(&block_idx - &start);
             if deal_order.expiration < elapsed_buf && deal_order.loan_transfer.is_empty() {
-                if ctx.tip == 0 || ctx.tip > DEAL_EXP_FIX_BLOCK {
+                if ctx.tip() == 0 || ctx.tip() > DEAL_EXP_FIX_BLOCK {
                     let wallet_id = string!(NAMESPACE_PREFIX, WALLET, &deal_order.sighash);
                     let state_data = get_state_data(tx_ctx, &wallet_id)?;
                     let mut wallet = protos::Wallet::try_parse(&state_data)?;
@@ -1719,42 +1723,6 @@ impl CCTransaction for Housekeeping {
     }
 }
 
-#[allow(dead_code)]
-#[derive(TypedBuilder)]
-pub struct HandlerContext {
-    // #[builder(default)]
-    // sighash: Option<SigHash>,
-    // #[builder(default)]
-    // guid: Option<Guid>,
-    #[builder(default = 0)]
-    tip: u64,
-    // #[builder(default = false)]
-    // replaying: bool,
-    // #[builder(default = false)]
-    // transitioning: bool,
-    // #[builder(default)]
-    // current_state: BTreeMap<State, State>,
-    gateway_context: zmq::Context,
-    local_gateway_sock: zmq::Socket,
-    settings: Settings,
-    gateway_endpoint: String,
-}
-
-impl HandlerContext {
-    fn sighash(&self, request: &TpProcessRequest) -> TxnResult<SigHash> {
-        // TODO: transitioning
-        let signer = request.get_header().get_signer_public_key();
-        let compressed = utils::compress(signer)?;
-        let hash = sha512_id(compressed.as_bytes());
-        Ok(SigHash(hash))
-    }
-
-    fn guid(&self, request: &TpProcessRequest) -> Guid {
-        // TODO: transitioning
-        Guid(request.get_header().get_nonce().to_owned())
-    }
-}
-
 pub struct CCTransactionHandler {
     zmq_context: zmq::Context,
     gateway_endpoint: String,
@@ -1780,6 +1748,7 @@ impl CCTransactionHandler {
     }
 }
 
+#[cfg(not(test))]
 impl TransactionHandler for CCTransactionHandler {
     fn family_name(&self) -> String {
         NAMESPACE.into()
