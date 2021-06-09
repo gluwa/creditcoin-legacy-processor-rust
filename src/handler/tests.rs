@@ -1,6 +1,13 @@
 #![cfg(test)]
 #![allow(non_snake_case, non_upper_case_globals)]
 
+mod mocked;
+
+use mocked::{MockSettings, MockTransactionContext};
+use sawtooth_sdk::processor::handler::ApplyError;
+use serde_cbor::Value;
+
+use std::collections::BTreeMap;
 use std::sync::Once;
 
 use mockall::predicate;
@@ -18,66 +25,22 @@ use crate::handler::utils;
 use crate::string;
 
 use super::context::mocked::MockHandlerContext;
+use super::AddAskOrder;
+use super::AddBidOrder;
+use super::AddDealOrder;
+use super::AddOffer;
+use super::AddRepaymentOrder;
+use super::CloseDealOrder;
+use super::CloseRepaymentOrder;
+use super::CollectCoins;
+use super::CompleteDealOrder;
+use super::CompleteRepaymentOrder;
+use super::Exempt;
+use super::LockDealOrder;
+use super::RegisterAddress;
+use super::RegisterTransfer;
+use super::SendFunds;
 use super::{CCTransaction, Housekeeping};
-
-use mockall::mock;
-
-mock! {
-    TransactionContext {}
-
-    impl TransactionContext for TransactionContext {
-        fn get_state_entry(&self, address: &str) -> Result<Option<Vec<u8>>, sawtooth_sdk::processor::handler::ContextError>;
-
-        fn get_state_entries(
-            &self,
-            addresses: &[String],
-        ) -> Result<Vec<(String, Vec<u8>)>, sawtooth_sdk::processor::handler::ContextError>;
-
-        fn set_state_entry(
-            &self,
-            address: String,
-            data: Vec<u8>,
-        ) -> Result<(), sawtooth_sdk::processor::handler::ContextError>;
-
-        fn set_state_entries(&self, entries: Vec<(String, Vec<u8>)>) -> Result<(), sawtooth_sdk::processor::handler::ContextError>;
-
-        fn delete_state_entry(
-            &self,
-            address: &str,
-        ) -> Result<Option<String>, sawtooth_sdk::processor::handler::ContextError>;
-
-        fn delete_state_entries(&self, addresses: &[String]) -> Result<Vec<String>, sawtooth_sdk::processor::handler::ContextError> ;
-
-        fn add_receipt_data(&self, data: &[u8]) -> Result<(), sawtooth_sdk::processor::handler::ContextError> ;
-
-        fn add_event(
-            &self,
-            event_type: String,
-            attributes: Vec<(String, String)>,
-            data: &[u8],
-        ) -> Result<(), sawtooth_sdk::processor::handler::ContextError> ;
-
-        fn get_sig_by_num(&self, block_num: u64) -> Result<String, sawtooth_sdk::processor::handler::ContextError> ;
-
-        fn get_reward_block_signatures(
-            &self,
-            block_id: &str,
-            first_pred: u64,
-            last_pred: u64,
-        ) -> Result<Vec<String>, sawtooth_sdk::processor::handler::ContextError> ;
-
-        fn get_state_entries_by_prefix(
-            &self,
-            address: &str,
-        ) -> Result<Vec<(String, Vec<u8>)>, sawtooth_sdk::processor::handler::ContextError> ;
-    }
-}
-
-mock! {
-    Settings {
-        pub fn get(&self, key: &str) -> Option<&'static str>;
-    }
-}
 
 use once_cell::sync::Lazy;
 
