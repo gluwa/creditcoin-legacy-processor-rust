@@ -67,3 +67,9 @@ pub const REWARD_AMOUNT_STRING: &str = "222000000000000000000";
 
 pub static REWARD_AMOUNT: Lazy<Integer> =
     Lazy::new(|| Integer::from_str_radix(REWARD_AMOUNT_STRING, 10).unwrap());
+
+// Error messages
+
+pub const INVALID_NUMBER_ERR: &str = "Invalid number";
+pub const INVALID_NUMBER_FORMAT_ERR: &str = "Invalid number format";
+pub const NEGATIVE_NUMBER_ERR: &str = "Expecting a positive value";

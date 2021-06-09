@@ -16,6 +16,7 @@ use crate::handler::constants::{
 };
 
 use super::constants::INTEREST_MULTIPLIER;
+use super::constants::INVALID_NUMBER_ERR;
 use super::types::Address;
 use super::types::BlockNum;
 use super::types::State;
@@ -106,7 +107,7 @@ pub fn get_u64(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> TxnResult
     let str_value = get_string(map, key, name)?;
     str_value
         .parse()
-        .map_err(|_| ApplyError::InvalidTransaction("Invalid number".into()))
+        .map_err(|_| ApplyError::InvalidTransaction(INVALID_NUMBER_ERR.into()))
 }
 
 pub fn to_hex_string(bytes: &[u8]) -> String {

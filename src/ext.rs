@@ -1,3 +1,4 @@
+use crate::handler::constants::{INVALID_NUMBER_FORMAT_ERR, NEGATIVE_NUMBER_ERR};
 use rug::Integer;
 use sawtooth_sdk::processor::handler::ApplyError;
 
@@ -6,9 +7,7 @@ pub trait IntegerExt {
         let parsed = <Integer as IntegerExt>::try_parse_signed(s)?;
 
         if parsed < 0 {
-            return Err(ApplyError::InvalidTransaction(
-                "Expecting a positive value".into(),
-            ));
+            return Err(ApplyError::InvalidTransaction(NEGATIVE_NUMBER_ERR.into()));
         }
 
         Ok(parsed)
@@ -17,13 +16,14 @@ pub trait IntegerExt {
     fn try_parse_signed<S: AsRef<str>>(s: S) -> Result<Integer, ApplyError> {
         Integer::parse(s.as_ref())
             .map(Integer::from)
-            .map_err(|_| ApplyError::InvalidTransaction("Invalid number format".into()))
+            .map_err(|_| ApplyError::InvalidTransaction(INVALID_NUMBER_FORMAT_ERR.into()))
     }
 }
 
 impl IntegerExt for Integer {}
 
 use prost::Message;
+
 pub trait MessageExt<M> {
     fn try_parse<B: AsRef<[u8]>>(b: B) -> Result<M, ApplyError>;
 
