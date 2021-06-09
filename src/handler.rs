@@ -313,7 +313,7 @@ impl TryFrom<Value> for CCCommand {
                 "AddRepaymentOrder" => {
                     let deal_order_id = get_string(&map, "p1", "dealOrderId")?.to_lowercase();
                     let address_id = get_string(&map, "p2", "addressId")?.to_lowercase();
-                    let amount = get_string(&map, "p3", "amount")?.clone();
+                    let amount = get_integer_string(&map, "p3", "amount")?.clone();
                     let expiration = get_u64(&map, "p4", "expiration")?;
 
                     AddRepaymentOrder {
@@ -337,7 +337,7 @@ impl TryFrom<Value> for CCCommand {
                 .into(),
 
                 "CollectCoins" => CollectCoins {
-                    eth_address: get_string(&map, "p1", "ethAddress")?.clone(),
+                    eth_address: get_string(&map, "p1", "ethAddress")?.to_lowercase(),
                     amount: get_integer(&map, "p2", "amount")?,
                     blockchain_tx_id: get_string(&map, "p3", "blockchainTxId")?.to_lowercase(),
                 }
