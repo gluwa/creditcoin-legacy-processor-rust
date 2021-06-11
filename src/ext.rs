@@ -1,6 +1,6 @@
 use crate::handler::{
     constants::{INVALID_NUMBER_FORMAT_ERR, NEGATIVE_NUMBER_ERR},
-    types::TxnResult,
+    types::{CCApplyError, TxnResult},
 };
 use rug::Integer;
 use sawtooth_sdk::processor::handler::ApplyError;
@@ -10,7 +10,7 @@ pub trait IntegerExt {
         let parsed = <Integer as IntegerExt>::try_parse_signed(s)?;
 
         if parsed < 0 {
-            return Err(ApplyError::InvalidTransaction(NEGATIVE_NUMBER_ERR.into()))?;
+            return Err(CCApplyError::InvalidTransaction(NEGATIVE_NUMBER_ERR.into()))?;
         }
 
         Ok(parsed)
@@ -19,7 +19,7 @@ pub trait IntegerExt {
     fn try_parse_signed<S: AsRef<str>>(s: S) -> TxnResult<Integer> {
         Ok(Integer::parse(s.as_ref())
             .map(Integer::from)
-            .map_err(|_| ApplyError::InvalidTransaction(INVALID_NUMBER_FORMAT_ERR.into()))?)
+            .map_err(|_| CCApplyError::InvalidTransaction(INVALID_NUMBER_FORMAT_ERR.into()))?)
     }
 }
 
@@ -36,7 +36,7 @@ pub trait MessageExt<M> {
 impl<M: Message + Default> MessageExt<M> for M {
     fn try_parse<B: AsRef<[u8]>>(buf: B) -> TxnResult<M> {
         M::decode(buf.as_ref()).map_err(|e| {
-            ApplyError::InvalidTransaction(format!("Failed to parse protobuf message : {}", e))
+            CCApplyError::InvalidTransaction(format!("Failed to parse protobuf message : {}", e))
                 .into()
         })
     }
@@ -59,15 +59,15 @@ impl ErrorExt for anyhow::Error {
     type Return = ApplyError;
 
     fn to_apply_error(self) -> Self::Return {
-        let e: Result<ApplyError, _> = self.downcast();
+        let e: Result<CCApplyError, _> = self.downcast();
         match e {
-            Ok(e) => e,
+            Ok(e) => e.into(),
             Err(f) => ApplyError::InvalidTransaction(f.to_string()),
         }
     }
 
     fn log_err(self) -> Self {
-        log::error!("An error occured: {:?}", &self);
+        log::error!("An error occured: {:#}", &self);
         self
     }
 }
@@ -80,7 +80,7 @@ impl ErrorExt for ApplyError {
     }
 
     fn log_err(self) -> Self {
-        log::error!("An error occurred: {:?}", &self);
+        log::error!("An error occurred: {:#}", &self);
         self
     }
 }
@@ -90,9 +90,9 @@ impl<T> ErrorExt for TxnResult<T> {
 
     fn to_apply_error(self) -> Self::Return {
         self.map_err(|err| {
-            let e: Result<ApplyError, _> = err.downcast();
+            let e: Result<CCApplyError, _> = err.downcast();
             match e {
-                Ok(e) => e,
+                Ok(e) => e.into(),
                 Err(f) => ApplyError::InvalidTransaction(f.to_string()),
             }
         })
@@ -100,7 +100,7 @@ impl<T> ErrorExt for TxnResult<T> {
 
     fn log_err(self) -> Self {
         if let Err(e) = &self {
-            log::error!("An error occurred: {:?}", &e);
+            log::error!("An error occurred: {:#}", &e);
         }
         self
     }

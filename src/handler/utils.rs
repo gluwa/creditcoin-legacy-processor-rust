@@ -6,7 +6,6 @@ use crate::handler::constants::GATEWAY_TIMEOUT;
 use prost::Message;
 use rug::Integer;
 use sawtooth_sdk::messages::processor::TpProcessRequest;
-use sawtooth_sdk::processor::handler::ApplyError::{self, InvalidTransaction};
 use sawtooth_sdk::processor::handler::TransactionContext;
 use serde_cbor::Value;
 use sha2::{Digest, Sha512};
@@ -17,11 +16,11 @@ use crate::handler::constants::{
 
 use super::constants::INTEREST_MULTIPLIER;
 use super::constants::INVALID_NUMBER_ERR;
-use super::types::Address;
 use super::types::BlockNum;
 use super::types::State;
 use super::types::StateVec;
 use super::types::WalletId;
+use super::types::{Address, CCApplyError};
 use super::types::{SigHash, TxnResult};
 use super::HandlerContext;
 
@@ -29,7 +28,7 @@ use super::HandlerContext;
 macro_rules! bail_transaction {
     (makeit $e: expr) => {
         core::result::Result::Err(
-            sawtooth_sdk::processor::handler::ApplyError::InvalidTransaction(($e).into()),
+            crate::handler::types::CCApplyError::InvalidTransaction(($e).into()),
         )
     };
     ($s: expr) => {
@@ -39,6 +38,9 @@ macro_rules! bail_transaction {
     ($s: expr, context = $c: expr) => {
         use anyhow::Context;
         return bail_transaction!(makeit $s).map_err(|e| anyhow::Error::from(e)).context($c);
+    };
+    ($s: literal, context = $c: literal, $($t2: tt),*) => {
+        bail_transaction!($s, context = format!($c, $($t2),*));
     };
     ($s: literal, $($t1: tt),* context = $c: literal, $($t2: tt),*) => {
         bail_transaction!(format!($s, $($t1),*), context = format!($c, $($t2),*));
@@ -111,7 +113,7 @@ pub fn get_u64(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> TxnResult
     let str_value = get_string(map, key, name)?;
     str_value
         .parse()
-        .map_err(|_| ApplyError::InvalidTransaction(INVALID_NUMBER_ERR.into()).into())
+        .map_err(|_| CCApplyError::InvalidTransaction(INVALID_NUMBER_ERR.into()).into())
 }
 
 pub fn to_hex_string(bytes: &[u8]) -> String {
@@ -149,7 +151,7 @@ pub fn compress(uncompressed: &str) -> TxnResult<SigHash> {
         let x = &uncompressed[2..][..(2 * 32)];
         let y_last = &uncompressed[2 * (1 + 32 + 31)..][..2];
         let last = i32::from_str_radix(y_last, 16)
-            .map_err(|_| ApplyError::InvalidTransaction("Unexpected public key format".into()))?;
+            .map_err(|_| CCApplyError::InvalidTransaction("Unexpected public key format".into()))?;
         let mut compressed = String::with_capacity(2 + x.len());
 
         if last % 2 == 1 {
@@ -162,7 +164,7 @@ pub fn compress(uncompressed: &str) -> TxnResult<SigHash> {
     } else if (marker == "02" || marker == "03") && uncompressed.len() == 66 {
         Ok(SigHash(uncompressed.to_owned()))
     } else {
-        Err(ApplyError::InvalidTransaction(
+        Err(CCApplyError::InvalidTransaction(
             "Unexpected public key format".into(),
         ))?
     }
@@ -176,18 +178,18 @@ pub fn params_from_bytes(bytes: &[u8]) -> anyhow::Result<Value> {
 pub fn create_socket(zmq_context: &zmq::Context, endpoint: &str) -> TxnResult<zmq::Socket> {
     let sock = zmq_context
         .socket(zmq::SocketType::REQ)
-        .map_err(|e| ApplyError::InternalError(format!("Failed to create socket : {}", e)))?;
+        .map_err(|e| CCApplyError::InternalError(format!("Failed to create socket : {}", e)))?;
     sock.connect(endpoint).map_err(|e| {
-        ApplyError::InternalError(format!("Failed to connect socket to endpoint : {}", e))
+        CCApplyError::InternalError(format!("Failed to connect socket to endpoint : {}", e))
     })?;
     sock.set_rcvtimeo(GATEWAY_TIMEOUT).map_err(|e| {
-        ApplyError::InternalError(format!("Failed to set socket receive timeout : {}", e))
+        CCApplyError::InternalError(format!("Failed to set socket receive timeout : {}", e))
     })?;
     sock.set_sndtimeo(GATEWAY_TIMEOUT).map_err(|e| {
-        ApplyError::InternalError(format!("Failed to set socket send timeout : {}", e))
+        CCApplyError::InternalError(format!("Failed to set socket send timeout : {}", e))
     })?;
     sock.set_linger(0)
-        .map_err(|e| ApplyError::InternalError(format!("Failed to set socket linger : {}", e)))?;
+        .map_err(|e| CCApplyError::InternalError(format!("Failed to set socket linger : {}", e)))?;
     Ok(sock)
 }
 
@@ -209,8 +211,10 @@ pub fn get_state_data<A: AsRef<str>>(
     let address = address.as_ref();
     let state_data = tx_ctx
         .get_state_entry(address)
-        .map_err(|e| ApplyError::from(e))?
-        .ok_or_else(|| InvalidTransaction(format!("Existing state expected {}", address)))?;
+        .map_err(|e| CCApplyError::from(e))?
+        .ok_or_else(|| {
+            CCApplyError::InvalidTransaction(format!("Existing state expected {}", address))
+        })?;
     Ok(state_data.into())
 }
 
@@ -221,7 +225,7 @@ pub fn try_get_state_data<A: AsRef<str>>(
     let address = address.as_ref();
     Ok(tx_ctx
         .get_state_entry(address)
-        .map_err(|e| ApplyError::from(e))?
+        .map_err(|e| CCApplyError::from(e))?
         .map(Into::into))
 }
 
@@ -229,7 +233,7 @@ pub fn add_state<M: Message>(states: &mut StateVec, id: String, message: &M) -> 
     let mut buf = Vec::with_capacity(message.encoded_len());
     message
         .encode(&mut buf)
-        .map_err(|e| InvalidTransaction(format!("Failed to add state : {}", e)))?;
+        .map_err(|e| CCApplyError::InvalidTransaction(format!("Failed to add state : {}", e)))?;
     states.push((id, buf));
     Ok(())
 }

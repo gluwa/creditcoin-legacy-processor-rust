@@ -1,13 +1,53 @@
+use std::fmt;
 use std::ops::Deref;
 
 use derive_more::{From, Into};
 use rug::Integer;
+use sawtooth_sdk::processor::handler::ApplyError;
+use sawtooth_sdk::processor::handler::ContextError;
 
 use crate::handler::constants::*;
 use crate::handler::utils::sha512_id;
 use crate::string;
 
 pub type TxnResult<T, E = anyhow::Error> = std::result::Result<T, E>;
+
+#[derive(Debug)]
+pub enum CCApplyError {
+    InvalidTransaction(String),
+    InternalError(String),
+}
+
+impl fmt::Display for CCApplyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self {
+            CCApplyError::InvalidTransaction(e) => write!(f, "{}", e),
+            CCApplyError::InternalError(e) => write!(f, "Internal error: {}", e),
+        }
+    }
+}
+
+impl Into<ApplyError> for CCApplyError {
+    fn into(self) -> ApplyError {
+        match self {
+            CCApplyError::InvalidTransaction(e) => ApplyError::InvalidTransaction(e),
+            CCApplyError::InternalError(e) => ApplyError::InternalError(e),
+        }
+    }
+}
+
+impl std::error::Error for CCApplyError {}
+
+impl From<ContextError> for CCApplyError {
+    fn from(context_error: ContextError) -> Self {
+        match context_error {
+            ContextError::TransactionReceiptError(..) => {
+                CCApplyError::InternalError(format!("{}", context_error))
+            }
+            _ => CCApplyError::InvalidTransaction(format!("{}", context_error)),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Default)]
 pub struct SigHash(pub String);

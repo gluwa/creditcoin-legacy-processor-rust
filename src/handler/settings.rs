@@ -7,9 +7,9 @@ use std::{
 
 use dashmap::DashMap;
 use log::{info, warn};
-use sawtooth_sdk::processor::{handler::ApplyError, EmptyTransactionContext};
+use sawtooth_sdk::processor::EmptyTransactionContext;
 
-use crate::handler::{constants::SETTINGS_NAMESPACE, filter};
+use crate::handler::{constants::SETTINGS_NAMESPACE, filter, types::CCApplyError};
 
 use super::types::TxnResult;
 
@@ -72,7 +72,10 @@ impl SettingsUpdater {
         filter(tx_ctx, SETTINGS_NAMESPACE, |_, proto| {
             let setting = sawtooth_sdk::messages::setting::Setting::parse_from_bytes(&proto)
                 .map_err(|e| {
-                    ApplyError::InternalError(format!("Failed to parse setting from bytes: {}", e))
+                    CCApplyError::InternalError(format!(
+                        "Failed to parse setting from bytes: {}",
+                        e
+                    ))
                 })?;
 
             for entry in setting.entries {

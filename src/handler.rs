@@ -34,8 +34,8 @@ use sawtooth_sdk::{
 };
 use settings::*;
 use std::{convert::TryFrom, default::Default, mem, ops::Deref};
+use types::CCApplyError::{InternalError, InvalidTransaction};
 use types::*;
-use ApplyError::{InternalError, InvalidTransaction};
 
 use enum_dispatch::enum_dispatch;
 use serde_cbor::Value;
@@ -545,7 +545,8 @@ impl CCTransaction for RegisterAddress {
         if try_get_state_data(tx_ctx, &id)?.is_some() {
             bail_transaction!(
                 "The address has been already registered",
-                context = "Could not register the address at id {}"
+                context = "Could not register the address at id {:?}",
+                id
             );
         }
 
@@ -910,7 +911,7 @@ impl CCTransaction for AddDealOrder {
 
         if offer.expiration < elapsed {
             bail_transaction!(
-                "The offer has expired",
+                "The order has expired",
                 context = "Cannot add deal order, invalid offer"
             );
         }
@@ -1495,7 +1496,7 @@ fn award(
         let wallet_id = string!(NAMESPACE_PREFIX.as_str(), WALLET, &signer_sighash);
         info!("checking wallet with id {}", wallet_id);
         let state_data = try_get_state_data(tx_ctx, &wallet_id)?.unwrap_or_default();
-
+        info!("got state data");
         let wallet = if state_data.is_empty() {
             Wallet { amount: reward_str }
         } else {
@@ -1510,7 +1511,9 @@ fn award(
         wallet
             .encode(&mut buf)
             .map_err(|e| InvalidTransaction(format!("Failed to add state : {}", e)))?;
+        info!("parsed proto");
         tx_ctx.set_state_entry(wallet_id, buf)?;
+        info!("set entry");
     }
     Ok(())
 }
@@ -1817,7 +1820,7 @@ impl TransactionHandler for CCTransactionHandler {
     ) -> TxnResult<(), ApplyError> {
         let params = utils::params_from_bytes(&request.payload)
             .log_err()
-            .map_err(|e| InvalidTransaction(format!("Malformed payload : {}", e)))?;
+            .map_err(|e| ApplyError::InvalidTransaction(format!("Malformed payload : {}", e)))?;
         let command = CCCommand::try_from(params).log_err().to_apply_error()?;
         let sock = utils::create_socket(&self.zmq_context, &self.gateway_endpoint)
             .log_err()

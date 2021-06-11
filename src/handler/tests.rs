@@ -19,7 +19,7 @@ use sawtooth_sdk::processor::handler::TransactionContext;
 use crate::ext::MessageExt;
 use crate::handler::constants::*;
 use crate::handler::settings::Settings;
-use crate::handler::types::SigHash;
+use crate::handler::types::{CCApplyError, SigHash};
 use crate::handler::types::WalletId;
 use crate::handler::utils;
 use crate::string;
@@ -166,8 +166,8 @@ fn deserialize_success(value: impl Serialize, expected: impl Into<CCCommand>) {
 fn deserialize_failure(value: impl Serialize, expected_err: &str) {
     let value = value::to_value(value).unwrap();
     let result = CCCommand::try_from(value).unwrap_err();
-    match result.downcast_ref::<ApplyError>() {
-        Some(ApplyError::InvalidTransaction(s)) => {
+    match result.downcast_ref::<CCApplyError>() {
+        Some(CCApplyError::InvalidTransaction(s)) => {
             assert_eq!(s, expected_err);
         }
         _ => panic!("Expected an InvalidTransaction error"),
