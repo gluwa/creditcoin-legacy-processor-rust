@@ -1,22 +1,25 @@
-use crate::handler::constants::{INVALID_NUMBER_FORMAT_ERR, NEGATIVE_NUMBER_ERR};
+use crate::handler::{
+    constants::{INVALID_NUMBER_FORMAT_ERR, NEGATIVE_NUMBER_ERR},
+    types::TxnResult,
+};
 use rug::Integer;
 use sawtooth_sdk::processor::handler::ApplyError;
 
 pub trait IntegerExt {
-    fn try_parse<S: AsRef<str>>(s: S) -> Result<Integer, ApplyError> {
+    fn try_parse<S: AsRef<str>>(s: S) -> TxnResult<Integer> {
         let parsed = <Integer as IntegerExt>::try_parse_signed(s)?;
 
         if parsed < 0 {
-            return Err(ApplyError::InvalidTransaction(NEGATIVE_NUMBER_ERR.into()));
+            return Err(ApplyError::InvalidTransaction(NEGATIVE_NUMBER_ERR.into()))?;
         }
 
         Ok(parsed)
     }
 
-    fn try_parse_signed<S: AsRef<str>>(s: S) -> Result<Integer, ApplyError> {
-        Integer::parse(s.as_ref())
+    fn try_parse_signed<S: AsRef<str>>(s: S) -> TxnResult<Integer> {
+        Ok(Integer::parse(s.as_ref())
             .map(Integer::from)
-            .map_err(|_| ApplyError::InvalidTransaction(INVALID_NUMBER_FORMAT_ERR.into()))
+            .map_err(|_| ApplyError::InvalidTransaction(INVALID_NUMBER_FORMAT_ERR.into()))?)
     }
 }
 
@@ -25,15 +28,16 @@ impl IntegerExt for Integer {}
 use prost::Message;
 
 pub trait MessageExt<M> {
-    fn try_parse<B: AsRef<[u8]>>(b: B) -> Result<M, ApplyError>;
+    fn try_parse<B: AsRef<[u8]>>(b: B) -> TxnResult<M>;
 
     fn to_bytes(&self) -> Vec<u8>;
 }
 
 impl<M: Message + Default> MessageExt<M> for M {
-    fn try_parse<B: AsRef<[u8]>>(buf: B) -> Result<M, ApplyError> {
+    fn try_parse<B: AsRef<[u8]>>(buf: B) -> TxnResult<M> {
         M::decode(buf.as_ref()).map_err(|e| {
             ApplyError::InvalidTransaction(format!("Failed to parse protobuf message : {}", e))
+                .into()
         })
     }
 
@@ -41,5 +45,63 @@ impl<M: Message + Default> MessageExt<M> for M {
         let mut buf = Vec::with_capacity(self.encoded_len());
         self.encode(&mut buf).unwrap();
         buf
+    }
+}
+
+pub trait ErrorExt: Sized {
+    type Return;
+    fn to_apply_error(self) -> Self::Return;
+
+    fn log_err(self) -> Self;
+}
+
+impl ErrorExt for anyhow::Error {
+    type Return = ApplyError;
+
+    fn to_apply_error(self) -> Self::Return {
+        let e: Result<ApplyError, _> = self.downcast();
+        match e {
+            Ok(e) => e,
+            Err(f) => ApplyError::InvalidTransaction(f.to_string()),
+        }
+    }
+
+    fn log_err(self) -> Self {
+        log::error!("An error occured: {:?}", &self);
+        self
+    }
+}
+
+impl ErrorExt for ApplyError {
+    type Return = ApplyError;
+
+    fn to_apply_error(self) -> Self::Return {
+        self
+    }
+
+    fn log_err(self) -> Self {
+        log::error!("An error occurred: {:?}", &self);
+        self
+    }
+}
+
+impl<T> ErrorExt for TxnResult<T> {
+    type Return = Result<T, ApplyError>;
+
+    fn to_apply_error(self) -> Self::Return {
+        self.map_err(|err| {
+            let e: Result<ApplyError, _> = err.downcast();
+            match e {
+                Ok(e) => e,
+                Err(f) => ApplyError::InvalidTransaction(f.to_string()),
+            }
+        })
+    }
+
+    fn log_err(self) -> Self {
+        if let Err(e) = &self {
+            log::error!("An error occurred: {:?}", &e);
+        }
+        self
     }
 }

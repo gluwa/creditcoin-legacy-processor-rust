@@ -27,20 +27,24 @@ use super::HandlerContext;
 
 #[macro_export]
 macro_rules! bail_transaction {
-    ($s: literal) => {
-        return core::result::Result::Err(
-            sawtooth_sdk::processor::handler::ApplyError::InvalidTransaction($s.into()),
-        );
+    (makeit $e: expr) => {
+        core::result::Result::Err(
+            sawtooth_sdk::processor::handler::ApplyError::InvalidTransaction(($e).into()),
+        )
     };
     ($s: expr) => {
-        return core::result::Result::Err(
-            sawtooth_sdk::processor::handler::ApplyError::InvalidTransaction($s),
-        );
+        return bail_transaction!(makeit $s)?;
+    };
+
+    ($s: expr, context = $c: expr) => {
+        use anyhow::Context;
+        return bail_transaction!(makeit $s).map_err(|e| anyhow::Error::from(e)).context($c);
+    };
+    ($s: literal, $($t1: tt),* context = $c: literal, $($t2: tt),*) => {
+        bail_transaction!(format!($s, $($t1),*), context = format!($c, $($t2),*));
     };
     ($s: literal, $($t: tt),*) => {
-        return core::result::Result::Err(
-            sawtooth_sdk::processor::handler::ApplyError::InvalidTransaction(format!($s, $($t),*)),
-        );
+        bail_transaction!(makeit (format!($s, $($t),*)))?;
     };
 }
 
@@ -107,7 +111,7 @@ pub fn get_u64(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> TxnResult
     let str_value = get_string(map, key, name)?;
     str_value
         .parse()
-        .map_err(|_| ApplyError::InvalidTransaction(INVALID_NUMBER_ERR.into()))
+        .map_err(|_| ApplyError::InvalidTransaction(INVALID_NUMBER_ERR.into()).into())
 }
 
 pub fn to_hex_string(bytes: &[u8]) -> String {
@@ -160,7 +164,7 @@ pub fn compress(uncompressed: &str) -> TxnResult<SigHash> {
     } else {
         Err(ApplyError::InvalidTransaction(
             "Unexpected public key format".into(),
-        ))
+        ))?
     }
 }
 
@@ -204,7 +208,8 @@ pub fn get_state_data<A: AsRef<str>>(
 ) -> TxnResult<State> {
     let address = address.as_ref();
     let state_data = tx_ctx
-        .get_state_entry(address)?
+        .get_state_entry(address)
+        .map_err(|e| ApplyError::from(e))?
         .ok_or_else(|| InvalidTransaction(format!("Existing state expected {}", address)))?;
     Ok(state_data.into())
 }
@@ -214,7 +219,10 @@ pub fn try_get_state_data<A: AsRef<str>>(
     address: A,
 ) -> TxnResult<Option<State>> {
     let address = address.as_ref();
-    Ok(tx_ctx.get_state_entry(address)?.map(Into::into))
+    Ok(tx_ctx
+        .get_state_entry(address)
+        .map_err(|e| ApplyError::from(e))?
+        .map(Into::into))
 }
 
 pub fn add_state<M: Message>(states: &mut StateVec, id: String, message: &M) -> TxnResult<()> {

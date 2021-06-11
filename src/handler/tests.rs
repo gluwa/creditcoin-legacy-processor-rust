@@ -150,8 +150,8 @@ fn deserialize_success(value: impl Serialize, expected: impl Into<CCCommand>) {
 fn deserialize_failure(value: impl Serialize, expected_err: &str) {
     let value = value::to_value(value).unwrap();
     let result = CCCommand::try_from(value).unwrap_err();
-    match result {
-        ApplyError::InvalidTransaction(s) => {
+    match result.downcast_ref::<ApplyError>() {
+        Some(ApplyError::InvalidTransaction(s)) => {
             assert_eq!(s, expected_err);
         }
         _ => panic!("Expected an InvalidTransaction error"),

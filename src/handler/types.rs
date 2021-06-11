@@ -2,13 +2,12 @@ use std::ops::Deref;
 
 use derive_more::{From, Into};
 use rug::Integer;
-use sawtooth_sdk::processor::handler::ApplyError;
 
 use crate::handler::constants::*;
 use crate::handler::utils::sha512_id;
 use crate::string;
 
-pub type TxnResult<T, E = ApplyError> = std::result::Result<T, E>;
+pub type TxnResult<T, E = anyhow::Error> = std::result::Result<T, E>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Default)]
 pub struct SigHash(pub String);

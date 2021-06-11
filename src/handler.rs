@@ -7,7 +7,7 @@ pub mod utils;
 
 use crate::{
     bail_transaction,
-    ext::{IntegerExt, MessageExt},
+    ext::{ErrorExt, IntegerExt, MessageExt},
     handler::utils::{
         add_fee, get_integer, get_integer_string, get_signed_integer, get_string, get_u64,
         last_block,
@@ -15,6 +15,7 @@ use crate::{
     protos, string,
 };
 
+use anyhow::Context;
 #[cfg(not(test))]
 use context::HandlerContext;
 
@@ -175,7 +176,7 @@ pub struct Housekeeping {
 }
 
 impl TryFrom<Value> for CCCommand {
-    type Error = ApplyError;
+    type Error = anyhow::Error;
 
     fn try_from(value: Value) -> TxnResult<Self, Self::Error> {
         if let Value::Map(map) = value {
@@ -358,12 +359,17 @@ impl TryFrom<Value> for CCCommand {
 
 fn charge(txn_ctx: &dyn TransactionContext, sighash: &SigHash) -> TxnResult<(WalletId, Wallet)> {
     let wallet_id = WalletId::from(sighash);
-    let state_data = get_state_data(txn_ctx, &wallet_id)?;
-    let mut wallet = Wallet::try_parse(&state_data)?;
-    let balance = Integer::try_parse(&wallet.amount)?;
+    let state_data = get_state_data(txn_ctx, &wallet_id).context("Failed to get wallet data")?;
+    let mut wallet = Wallet::try_parse(&state_data)
+        .context(format!("The wallet for {:?} is invalid", sighash))?;
+    let balance = Integer::try_parse(&wallet.amount)
+        .context(format!("The wallet balance for {:?} is malformed", sighash))?;
 
     if balance < *TX_FEE {
-        bail_transaction!("Insufficient funds");
+        bail_transaction!(
+            "Insufficient funds",
+            context = "Wallet balance does not cover transaction fee"
+        );
     }
 
     wallet.amount = (balance - &*TX_FEE).to_string_radix(10);
@@ -428,7 +434,7 @@ fn verify(ctx: &mut HandlerContext, gateway_command: &str) -> TxnResult<()> {
         Ok(Err(_)) => {
             return Err(InvalidTransaction(
                 "Gateway response was invalid UTF-8".into(),
-            ))
+            ))?;
         }
     };
 
@@ -441,7 +447,7 @@ fn verify(ctx: &mut HandlerContext, gateway_command: &str) -> TxnResult<()> {
         );
         Err(InvalidTransaction(
             "Couldn't validate the transaction".into(),
-        ))
+        ))?
     }
 }
 
@@ -470,12 +476,21 @@ impl CCTransaction for SendFunds {
         let src_wallet_id = my_sighash.to_wallet_id();
         let state_data = get_state_data(tx_ctx, &*src_wallet_id)?;
 
-        let mut src_wallet = Wallet::try_parse(&state_data)?;
+        let mut src_wallet = Wallet::try_parse(&state_data).context(format!(
+            "Failed to parse source wallet at {:?} from state data",
+            src_wallet_id
+        ))?;
         let amount_plus_fee = self.amount.clone() + &*TX_FEE;
-        let mut src_balance = Integer::try_parse(&src_wallet.amount)?;
+        let mut src_balance = Integer::try_parse(&src_wallet.amount).context(format!(
+            "Failed to parse wallet balance at {:?}, found {:?}",
+            src_wallet_id, &src_wallet.amount
+        ))?;
 
         if src_balance < amount_plus_fee {
-            bail_transaction!("Insufficient funds");
+            bail_transaction!(
+                "Insufficient funds",
+                context = "Failed to withdraw funds from source wallet"
+            );
         }
 
         src_balance -= amount_plus_fee;
@@ -528,7 +543,10 @@ impl CCTransaction for RegisterAddress {
         let id = Address::with_prefix_key(ADDR, &key);
 
         if try_get_state_data(tx_ctx, &id)?.is_some() {
-            bail_transaction!("The address has been already registered");
+            bail_transaction!(
+                "The address has been already registered",
+                context = "Could not register the address at id {}"
+            );
         }
 
         let address = crate::protos::Address {
@@ -783,7 +801,10 @@ impl CCTransaction for AddOffer {
         let elapsed = head.clone() - start;
 
         if ask_order.expiration < elapsed {
-            bail_transaction!("The order has expired".into());
+            bail_transaction!(
+                "The order has expired",
+                context = "Cannot add offer, the ask order is invalid"
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &ask_order.address)?;
@@ -794,14 +815,20 @@ impl CCTransaction for AddOffer {
         let bid_order = crate::protos::BidOrder::try_parse(&state_data)?;
 
         if bid_order.sighash == my_sighash.as_str() {
-            bail_transaction!("The ask and bid orders are from the same party");
+            bail_transaction!(
+                "The ask and bid orders are from the same party",
+                context = "Cannot add offer"
+            );
         }
 
         let start = Integer::try_parse(&bid_order.block)?;
         let elapsed = head - start;
 
         if bid_order.expiration < elapsed {
-            bail_transaction!("The order has expired");
+            bail_transaction!(
+                "The order has expired",
+                context = "Cannot add offer, the bid order is invalid"
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &bid_order.address)?;
@@ -810,7 +837,10 @@ impl CCTransaction for AddOffer {
         if src_address.blockchain != dst_address.blockchain
             || src_address.network != dst_address.network
         {
-            bail_transaction!("The ask and bid orders must be on the same blockchain and network");
+            bail_transaction!(
+                "The ask and bid orders must be on the same blockchain and network",
+                context = "Cannot add offer, there is a mismatch between the ask and bid order"
+            );
         }
 
         let ask_fee = Integer::try_parse(&ask_order.fee)?;
@@ -826,7 +856,10 @@ impl CCTransaction for AddOffer {
             || ask_fee > bid_fee
             || (ask_interest / ask_maturity) > (bid_interest / bid_maturity)
         {
-            bail_transaction!("The ask and bid orders do not match");
+            bail_transaction!(
+                "The ask and bid orders do not match",
+                context = "Cannot add offer, the parameters of the ask and bid orders are invalid"
+            );
         }
 
         let offer = crate::protos::Offer {
@@ -841,7 +874,7 @@ impl CCTransaction for AddOffer {
         let mut states = vec![(id.clone().into(), state_data.into())];
 
         add_state(&mut states, id.into(), &offer)?;
-        add_fee_state(ctx, request, &&my_sighash, &mut states, &wallet_id, &wallet)?;
+        add_fee_state(ctx, request, &my_sighash, &mut states, &wallet_id, &wallet)?;
         tx_ctx.set_state_entries(states)?;
         Ok(())
     }
@@ -859,7 +892,10 @@ impl CCTransaction for AddDealOrder {
         let state_data = try_get_state_data(tx_ctx, &id)?;
 
         if state_data.is_some() {
-            bail_transaction!("Duplicate id");
+            bail_transaction!(
+                "Duplicate id",
+                context = "Cannot add deal order, the id is invalid"
+            );
         }
 
         let my_sighash = ctx.sighash(request)?;
@@ -873,7 +909,10 @@ impl CCTransaction for AddDealOrder {
         let elapsed = head - start;
 
         if offer.expiration < elapsed {
-            bail_transaction!("The order has expired");
+            bail_transaction!(
+                "The offer has expired",
+                context = "Cannot add deal order, invalid offer"
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &offer.bid_order)?;
@@ -1775,18 +1814,24 @@ impl TransactionHandler for CCTransactionHandler {
         &self,
         request: &TpProcessRequest,
         context: &mut dyn TransactionContext,
-    ) -> TxnResult<()> {
+    ) -> TxnResult<(), ApplyError> {
         let params = utils::params_from_bytes(&request.payload)
+            .log_err()
             .map_err(|e| InvalidTransaction(format!("Malformed payload : {}", e)))?;
-        let command = CCCommand::try_from(params)?;
-        let sock = utils::create_socket(&self.zmq_context, &self.gateway_endpoint)?;
+        let command = CCCommand::try_from(params).log_err().to_apply_error()?;
+        let sock = utils::create_socket(&self.zmq_context, &self.gateway_endpoint)
+            .log_err()
+            .to_apply_error()?;
         let mut handler_context = HandlerContext::builder()
             .gateway_context(self.zmq_context.clone())
             .local_gateway_sock(sock)
             .gateway_endpoint(self.gateway_endpoint.clone())
             .settings(self.settings.clone())
             .build();
-        command.execute(request, context, &mut handler_context)?;
+        command
+            .execute(request, context, &mut handler_context)
+            .log_err()
+            .to_apply_error()?;
         Ok(())
     }
 }
