@@ -1,5 +1,6 @@
 #![allow(clippy::suspicious_operation_groupings)]
-#![cfg_attr(test, allow(unused))]
+#![deny(unused_must_use)]
+#![cfg_attr(test, allow(dead_code, unused_imports))]
 
 pub mod ext;
 pub mod handler;

@@ -67,9 +67,10 @@ fn wallet_with(balance: Option<u64>) -> Option<Vec<u8>> {
 }
 
 macro_rules! expect {
-    ($id: ident, $fun: ident ($($arg: pat if $e: expr),*) -> $ret: expr , $count:literal times) => {
-        paste::paste! {
-            $id.[<expect_ $fun>]()
+    ($id: ident, $fun: ident ($($arg: pat if $e: expr),* $(,)?) -> $ret: expr , $count:literal times) => {
+        #[allow(unused_variables)] {
+            paste::paste! {
+                $id.[<expect_ $fun>]()
                 .times($count)
                 .withf(move |$($arg),*| {
                     $($e)&&*
@@ -77,9 +78,24 @@ macro_rules! expect {
                 .return_once(move |$($arg),*| {
                     $ret
                 });
+            }
         }
     };
-    ($id: ident, $fun: ident ($($arg: pat if $e: expr),*) -> $ret: expr) => {
+    ($id: ident, $fun: ident ($($arg: pat),* $(,)?) -> $ret: expr , $count:literal times) => {
+        #[allow(unused_variables)] {
+            paste::paste! {
+                $id.[<expect_ $fun>]()
+                    .times($count)
+                    .return_once(move |$($arg),*| {
+                        $ret
+                    });
+            }
+        }
+    };
+    ($id: ident, $fun: ident ($($arg: pat),* $(,)?) -> $ret: expr ) => {
+        expect!($id, $fun ($($arg),*) -> $ret , 1 times);
+    };
+    ($id: ident, $fun: ident ($($arg: pat if $e: expr),*  $(,)?) -> $ret: expr) => {
        expect!($id, $fun ($($arg if $e),*) -> $ret , 1 times);
     };
 }
@@ -1056,7 +1072,7 @@ fn housekeeping_reward_fork() {
 
     log::warn!("{}..{}", last_pred, first_pred);
 
-    let mut signers: Vec<String> = (last_pred..first_pred)
+    let signers: Vec<String> = (last_pred..first_pred)
         .map(|i| format!("signer{}", i))
         .collect();
 
