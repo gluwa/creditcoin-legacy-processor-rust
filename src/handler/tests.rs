@@ -10,6 +10,8 @@ use serde_cbor::Value;
 use std::collections::BTreeMap;
 use std::sync::Once;
 
+use enclose::enclose;
+use itertools::Itertools;
 use mockall::predicate;
 use prost::Message;
 use rug::Integer;
@@ -20,11 +22,12 @@ use crate::ext::MessageExt;
 use crate::handler::constants::*;
 use crate::handler::settings::Settings;
 use crate::handler::types::{CCApplyError, SigHash};
-use crate::handler::types::WalletId;
+use crate::handler::types::{Guid, WalletId};
 use crate::handler::utils;
 use crate::string;
 
 use super::context::mocked::MockHandlerContext;
+use super::types::Address;
 use super::AddAskOrder;
 use super::AddBidOrder;
 use super::AddDealOrder;
@@ -55,10 +58,10 @@ fn init_logs() {
     })
 }
 
-fn wallet_with(balance: Option<u64>) -> Option<Vec<u8>> {
+fn wallet_with(balance: Option<impl Into<Integer> + Clone>) -> Option<Vec<u8>> {
     balance.map(|b| {
         let wallet = crate::protos::Wallet {
-            amount: b.to_string(),
+            amount: b.into().to_string(),
         };
         let mut buf = Vec::with_capacity(wallet.encoded_len());
         wallet.encode(&mut buf).unwrap();
@@ -67,36 +70,79 @@ fn wallet_with(balance: Option<u64>) -> Option<Vec<u8>> {
 }
 
 macro_rules! expect {
-    ($id: ident, $fun: ident ($($arg: pat if $e: expr),* $(,)?) -> $ret: expr , $count:literal times) => {
-        #[allow(unused_variables)] {
-            paste::paste! {
+    ($id: ident, $fun: ident with $c: expr, returning $ret: expr, $count: literal times) => {
+
+        paste::paste! {
+                #[allow(unused_variables)]
                 $id.[<expect_ $fun>]()
                 .times($count)
-                .withf(move |$($arg),*| {
-                    $($e)&&*
-                })
-                .return_once(move |$($arg),*| {
-                    $ret
-                });
+                .withf($c)
+                .return_once($ret)
             }
-        }
+
+    };
+    ($id: ident, $fun: ident with $c: expr, returning $ret: expr) => {
+        expect!($id, $fun with $c, returning $ret, 1 times)
+    };
+    ($id: ident, $fun: ident ($($arg: pat),* $(,)?), returning $ret: expr) => {
+        expect!($id, $fun with { |$($arg),*| true}, returning $ret, 1 times)
+    };
+    ($id: ident, $fun: ident ($($arg: pat if $e: expr),* $(,)?) -> $ret: expr , $count:literal times) => {
+        expect!($id, $fun with {
+            move |$($arg),*| {
+                $($e)&&*
+            }
+        }, returning {
+            move |$($arg),*| {
+                $ret
+            }
+        }, 1 times)
     };
     ($id: ident, $fun: ident ($($arg: pat),* $(,)?) -> $ret: expr , $count:literal times) => {
-        #[allow(unused_variables)] {
-            paste::paste! {
-                $id.[<expect_ $fun>]()
-                    .times($count)
-                    .return_once(move |$($arg),*| {
-                        $ret
-                    });
-            }
-        }
+        expect!($id, $fun with { |$($arg),*| true}, returning {move |$($arg),*| {
+            $ret
+        }}, $count times)
     };
     ($id: ident, $fun: ident ($($arg: pat),* $(,)?) -> $ret: expr ) => {
-        expect!($id, $fun ($($arg),*) -> $ret , 1 times);
+        expect!($id, $fun ($($arg),*) -> $ret , 1 times)
     };
     ($id: ident, $fun: ident ($($arg: pat if $e: expr),*  $(,)?) -> $ret: expr) => {
-       expect!($id, $fun ($($arg if $e),*) -> $ret , 1 times);
+       expect!($id, $fun ($($arg if $e),*) -> $ret , 1 times)
+    };
+    ($id: ident, get balance at $w: ident -> $ret: expr) => {
+        expect!($id, get_state_entry with {
+            enclose!(($w) move |_w| {
+                _w == $w.as_str()
+            })
+        }, returning {
+            move |_| Ok(wallet_with($ret))
+        }, 1 times)
+    };
+    ($id: ident, set balance at $w: ident to $amt: ident) => {
+        {
+            expect!($id, set_state_entry with {
+                let $amt = $amt.clone();
+                let _wallet = wallet_with(Some($amt)).unwrap();
+                enclose!(($w) move |_w, _a| {
+                    _w == $w.as_str() && _a == &_wallet
+                })
+            }, returning {
+                |_,_| Ok(())
+            }, 1 times);
+            wallet_with(Some($amt.clone())).unwrap()
+        }
+    };
+    ($id: ident, set balance at $w: ident to ($amt: expr)) => {
+        {
+            expect!($id, set_state_entry with {
+                enclose!(($w) move |_w, _a| {
+                    _w == $w.as_str() && _a == &wallet_with(Some($amt.clone())).unwrap()
+                })
+            }, returning {
+                |_,_| Ok(())
+            }, 1 times);
+            wallet_with(Some($amt.clone())).unwrap()
+        }
     };
 }
 
@@ -986,7 +1032,6 @@ fn housekeeping_reward_in_chain() {
 
     for (idx, signer) in signers.clone().into_iter().enumerate() {
         let wallet_id = WalletId::from(&SigHash(utils::sha512_id(signer.as_bytes())));
-        let wallet_id_ = wallet_id.clone();
 
         // the first signer has no wallet, the rest have an existing balance of `idx`
         let balance = if idx == 0 { None } else { Some(idx as u64) };
@@ -995,26 +1040,17 @@ fn housekeeping_reward_in_chain() {
 
         // housekeeping should try to fetch the current wallet for each signer
         // return the balance above
-        expect!(
-            tx_ctx,
-            get_state_entry(k if k == wallet_id.as_str()) -> Ok(wallet_with(balance))
-        );
+        expect!(tx_ctx, get balance at wallet_id -> balance);
 
         // we expect the wallet to have an updated balance of reward_amount + old balance
-        let wallet_expected = crate::protos::Wallet {
-            amount: (reward_amount.clone() + balance.unwrap_or(0)).to_string(),
-        };
-        let state_expected = wallet_expected.to_bytes();
+        let amount_expected = reward_amount.clone() + balance.unwrap_or(0);
 
-        log::info!("expect end wallet = {:?}", wallet_expected);
+        log::info!("expect end wallet = {:?}", amount_expected);
         // housekeeping should try to set the state to update
         // the wallet balance with the reward added
         expect!(
             tx_ctx,
-            set_state_entry(
-                addr if addr == wallet_id_.as_str(),
-                state if state == &state_expected
-            ) -> Ok(())
+            set balance at wallet_id to amount_expected
         );
     }
 

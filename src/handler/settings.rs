@@ -67,6 +67,7 @@ impl SettingsUpdater {
         }
     }
     fn update_settings(tx_ctx: &EmptyTransactionContext, settings: &Settings) -> TxnResult<()> {
+        tx_ctx.flush();
         info!("updating settings");
         use sawtooth_sdk::messages::Message;
         filter(tx_ctx, SETTINGS_NAMESPACE, |_, proto| {
