@@ -470,7 +470,7 @@ impl CCTransaction for SendFunds {
     ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
         if self.sighash == my_sighash {
-            bail_transaction!("Invalid destination");
+            bail_transaction!("Invalid destination", context = "Cannot send funds, the sender and receiver must be different");
         }
 
         let src_wallet_id = my_sighash.to_wallet_id();

@@ -1127,6 +1127,8 @@ fn send_funds_to_self() {
 
     let request = TpProcessRequest::default();
 
+    let tx_ctx = MockTransactionContext::default();
+
     let my_sighash = SigHash::from("mysighash");
 
     let mut ctx = MockHandlerContext::default();
