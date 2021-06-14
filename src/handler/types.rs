@@ -52,6 +52,12 @@ impl From<ContextError> for CCApplyError {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Default)]
 pub struct SigHash(pub String);
 
+impl From<&str> for SigHash {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
 impl SigHash {
     pub fn to_wallet_id(&self) -> WalletId {
         let wallet_id = string!(NAMESPACE_PREFIX, WALLET, self);
@@ -93,6 +99,12 @@ impl AsRef<str> for WalletId {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Default)]
 pub struct Guid(pub String);
+
+impl From<&str> for Guid {
+    fn from(s: &str) -> Self {
+        Guid(s.to_string())
+    }
+}
 
 impl Deref for Guid {
     type Target = String;
