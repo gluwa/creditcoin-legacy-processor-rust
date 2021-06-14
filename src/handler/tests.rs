@@ -979,7 +979,161 @@ fn housekeeping_rejects_missing_arg() {
     deserialize_failure(ZeroArgCommand::new("Housekeeping"), "Expecting blockIdx");
 }
 
-// TRANSACTION EXECUTION TESTS
+fn make_fee(guid: &Guid, sighash: &SigHash, block: Option<u64>) -> (String, Vec<u8>) {
+    let fee_id = Address::with_prefix_key(super::constants::FEE, guid.as_str());
+    let fee = crate::protos::Fee {
+        sighash: sighash.clone().into(),
+        block: block.unwrap_or_default().to_string(),
+    };
+    (fee_id.to_string(), fee.to_bytes())
+}
+
+fn expect_set_state_entries(tx_ctx: &mut MockTransactionContext, entries: Vec<(String, Vec<u8>)>) {
+    expect!(tx_ctx, set_state_entries with {
+        let entries = entries.into_iter().sorted().collect_vec();
+        move |e| {
+            itertools::equal(&entries, &itertools::sorted(e.clone()).collect_vec())
+        }
+    }, returning |_| Ok(()));
+}
+
+// ----- COMMAND EXECUTION TESTS -----
+#[track_caller]
+fn execute_success(
+    command: impl CCTransaction,
+    request: &TpProcessRequest,
+    tx_ctx: &MockTransactionContext,
+    ctx: &mut MockHandlerContext,
+) {
+    command.execute(request, tx_ctx, ctx).unwrap();
+}
+
+#[track_caller]
+fn execute_failure(
+    command: impl CCTransaction,
+    request: &TpProcessRequest,
+    tx_ctx: &MockTransactionContext,
+    ctx: &mut MockHandlerContext,
+    expected_err: &str,
+) {
+    let result = command.execute(request, tx_ctx, ctx).unwrap_err();
+    match result.downcast_ref::<CCApplyError>() {
+        Some(CCApplyError::InvalidTransaction(s)) => {
+            assert_eq!(s, expected_err);
+        }
+        _ => panic!("Expected an InvalidTransaction error"),
+    };
+}
+#[test]
+fn send_funds_basic() {
+    init_logs();
+    let destination = SigHash("destination".into());
+    let command = SendFunds {
+        amount: 1.into(),
+        sighash: destination.clone(),
+    };
+
+    let request = TpProcessRequest::default();
+
+    let mut tx_ctx = MockTransactionContext::default();
+
+    let my_sighash = SigHash("mysighash".into());
+    let my_wallet_id = WalletId::from(&my_sighash);
+    let dest_wallet_id = WalletId::from(&destination);
+
+    let mut ctx = MockHandlerContext::default();
+    expect!(ctx, sighash(r), returning enclose!((my_sighash) move | _ | Ok(my_sighash)));
+
+    let amount_needed = command.amount.clone() + &*TX_FEE;
+
+    expect!(tx_ctx, get balance at my_wallet_id -> Some(amount_needed));
+    expect!(tx_ctx, get balance at dest_wallet_id -> Some(0));
+
+    let guid = Guid("txnguid".into());
+
+    expect!(ctx, guid(_), returning enclose!((guid) move | _ | guid));
+
+    expect_set_state_entries(
+        &mut tx_ctx,
+        vec![
+            (my_wallet_id.to_string(), wallet_with(Some(0)).unwrap()),
+            (dest_wallet_id.to_string(), wallet_with(Some(1)).unwrap()),
+            make_fee(&guid, &my_sighash, None),
+        ],
+    );
+
+    command.execute(&request, &tx_ctx, &mut ctx).unwrap();
+}
+
+#[test]
+fn send_funds_cannot_afford_fee() {
+    init_logs();
+
+    let destination = SigHash::from("destination");
+    let command = SendFunds {
+        amount: 1.into(),
+        sighash: destination.clone(),
+    };
+
+    let request = TpProcessRequest::default();
+
+    let mut tx_ctx = MockTransactionContext::default();
+
+    let my_sighash = SigHash::from("mysighash");
+    let my_wallet_id = WalletId::from(&my_sighash);
+
+    let mut ctx = MockHandlerContext::default();
+    expect!(ctx, sighash(r), returning enclose!((my_sighash) move | _ | Ok(my_sighash)));
+
+    expect!(tx_ctx, get balance at my_wallet_id -> Some(1));
+
+    execute_failure(command, &request, &tx_ctx, &mut ctx, "Insufficient funds");
+}
+
+#[test]
+fn send_funds_cannot_afford_amount() {
+    init_logs();
+
+    let destination = SigHash::from("destination");
+    let command = SendFunds {
+        amount: 1.into(),
+        sighash: destination.clone(),
+    };
+
+    let request = TpProcessRequest::default();
+
+    let mut tx_ctx = MockTransactionContext::default();
+
+    let my_sighash = SigHash::from("mysighash");
+    let my_wallet_id = WalletId::from(&my_sighash);
+
+    let mut ctx = MockHandlerContext::default();
+    expect!(ctx, sighash(r), returning enclose!((my_sighash) move | _ | Ok(my_sighash)));
+
+    expect!(tx_ctx, get balance at my_wallet_id -> Some(TX_FEE.clone()));
+
+    execute_failure(command, &request, &tx_ctx, &mut ctx, "Insufficient funds");
+}
+
+#[test]
+fn send_funds_to_self() {
+    init_logs();
+
+    let destination = SigHash::from("mysighash");
+    let command = SendFunds {
+        amount: 1.into(),
+        sighash: destination.clone(),
+    };
+
+    let request = TpProcessRequest::default();
+
+    let my_sighash = SigHash::from("mysighash");
+
+    let mut ctx = MockHandlerContext::default();
+    expect!(ctx, sighash(r), returning enclose!((my_sighash) move | _ | Ok(my_sighash)));
+
+    execute_failure(command, &request, &tx_ctx, &mut ctx, "Invalid destination");
+}
 
 #[test]
 fn housekeeping_reward_in_chain() {
