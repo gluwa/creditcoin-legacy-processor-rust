@@ -70,7 +70,7 @@ fn wallet_with(balance: Option<impl Into<Integer> + Clone>) -> Option<Vec<u8>> {
 }
 
 macro_rules! expect {
-    ($id: ident, $fun: ident with $c: expr, returning $ret: expr, $count: literal times) => {
+    ($id: ident, $fun: ident where $c: expr, returning $ret: expr, $count: literal times) => {
 
         paste::paste! {
                 #[allow(unused_variables)]
@@ -81,14 +81,14 @@ macro_rules! expect {
             }
 
     };
-    ($id: ident, $fun: ident with $c: expr, returning $ret: expr) => {
-        expect!($id, $fun with $c, returning $ret, 1 times)
+    ($id: ident, $fun: ident where $c: expr, returning $ret: expr) => {
+        expect!($id, $fun where $c, returning $ret, 1 times)
     };
     ($id: ident, $fun: ident ($($arg: pat),* $(,)?), returning $ret: expr) => {
-        expect!($id, $fun with { |$($arg),*| true}, returning $ret, 1 times)
+        expect!($id, $fun where { |$($arg),*| true}, returning $ret, 1 times)
     };
     ($id: ident, $fun: ident ($($arg: pat if $e: expr),* $(,)?) -> $ret: expr , $count:literal times) => {
-        expect!($id, $fun with {
+        expect!($id, $fun where {
             move |$($arg),*| {
                 $($e)&&*
             }
@@ -99,7 +99,7 @@ macro_rules! expect {
         }, 1 times)
     };
     ($id: ident, $fun: ident ($($arg: pat),* $(,)?) -> $ret: expr , $count:literal times) => {
-        expect!($id, $fun with { |$($arg),*| true}, returning {move |$($arg),*| {
+        expect!($id, $fun where { |$($arg),*| true}, returning {move |$($arg),*| {
             $ret
         }}, $count times)
     };
@@ -110,7 +110,7 @@ macro_rules! expect {
        expect!($id, $fun ($($arg if $e),*) -> $ret , 1 times)
     };
     ($id: ident, get balance at $w: ident -> $ret: expr) => {
-        expect!($id, get_state_entry with {
+        expect!($id, get_state_entry where {
             enclose!(($w) move |_w| {
                 _w == $w.as_str()
             })
@@ -118,9 +118,16 @@ macro_rules! expect {
             move |_| Ok(wallet_with($ret))
         }, 1 times)
     };
+    ($id: ident, get balance at $w: ident, returning $ret: expr) => {
+        expect!($id, get_state_entry where {
+            enclose!(($w) move |_w| {
+                _w == $w.as_str()
+            })
+        }, returning $ret, 1 times)
+    };
     ($id: ident, set balance at $w: ident to $amt: ident) => {
         {
-            expect!($id, set_state_entry with {
+            expect!($id, set_state_entry where {
                 let $amt = $amt.clone();
                 let _wallet = wallet_with(Some($amt)).unwrap();
                 enclose!(($w) move |_w, _a| {
@@ -134,7 +141,7 @@ macro_rules! expect {
     };
     ($id: ident, set balance at $w: ident to ($amt: expr)) => {
         {
-            expect!($id, set_state_entry with {
+            expect!($id, set_state_entry where {
                 enclose!(($w) move |_w, _a| {
                     _w == $w.as_str() && _a == &wallet_with(Some($amt.clone())).unwrap()
                 })
@@ -145,28 +152,28 @@ macro_rules! expect {
         }
     };
     ($id: ident, sighash -> $sig: ident) => {
-        expect!($id, sighash with {
+        expect!($id, sighash where {
             |_| true
         }, returning {
             enclose!(($sig) move |_| Ok($sig))
         })
     };
     ($id: ident, sighash -> $sig: expr) => {
-        expect!($id, sighash with {
+        expect!($id, sighash where {
             |_| true
         }, returning {
             enclose!(($sig) move |_| Ok(crate::handler::types::SigHash($sig.to_string())))
         })
     };
     ($id: ident, guid -> $guid: ident) => {
-        expect!($id, guid with {
+        expect!($id, guid where {
             |_| true
         }, returning {
             enclose!(($guid) move |_| $guid)
         })
     };
     ($id: ident, guid -> $guid: literal) => {
-        expect!($id, guid with {
+        expect!($id, guid where {
             |_| true
         }, returning {
             move |_| crate::handler::types::Guid($guid.to_string())
@@ -1017,7 +1024,7 @@ fn make_fee(guid: &Guid, sighash: &SigHash, block: Option<u64>) -> (String, Vec<
 }
 
 fn expect_set_state_entries(tx_ctx: &mut MockTransactionContext, entries: Vec<(String, Vec<u8>)>) {
-    expect!(tx_ctx, set_state_entries with {
+    expect!(tx_ctx, set_state_entries where {
         let entries = entries.into_iter().sorted().collect_vec();
         move |e| {
             let s = itertools::sorted(e.clone());
@@ -1212,7 +1219,7 @@ fn register_address_success() {
     let address = Address::with_prefix_key(ADDR, &register_id);
 
     // check if there is an existing address, in this case we will pretend that there is not one
-    expect!(tx_ctx, get_state_entry with enclose!((address) move |a| &a == &address.as_str()), returning |_| Ok(None));
+    expect!(tx_ctx, get_state_entry where enclose!((address) move |a| &a == &address.as_str()), returning |_| Ok(None));
 
     let address_proto = crate::protos::Address {
         blockchain: command.blockchain.clone(),
@@ -1235,8 +1242,6 @@ fn register_address_success() {
 
 #[test]
 fn register_address_taken() {
-    init_logs();
-
     init_logs();
 
     let command = RegisterAddress {
@@ -1269,7 +1274,7 @@ fn register_address_taken() {
     };
 
     // check if there is an existing address, in this case we will pretend that there IS one
-    expect!(tx_ctx, get_state_entry with enclose!((address) move |a| &a == &address.as_str()), returning move |_| Ok(Some(existing_address.to_bytes())));
+    expect!(tx_ctx, get_state_entry where enclose!((address) move |a| &a == &address.as_str()), returning move |_| Ok(Some(existing_address.to_bytes())));
 
     execute_failure(
         command,
@@ -1278,6 +1283,102 @@ fn register_address_taken() {
         &mut ctx,
         "The address has been already registered",
     );
+}
+
+#[test]
+fn register_transfer_success() {
+    init_logs();
+
+    let command = RegisterTransfer {
+        gain: 1.into(),
+        order_id: string!(DEAL_ORDER_PREFIX, "orderid"),
+        blockchain_tx_id: "blockchaintxid".into(),
+    };
+
+    let request = TpProcessRequest::default();
+
+    let mut tx_ctx = MockTransactionContext::default();
+    let mut ctx = MockHandlerContext::default();
+
+    let my_sighash = SigHash::from("mysighash");
+    let other_sighash = SigHash::from("othersighash");
+
+    expect!(ctx, sighash -> my_sighash);
+
+    let wallet_id = WalletId::from(&my_sighash);
+    let fee = TX_FEE.clone();
+    expect!(tx_ctx, get balance at wallet_id -> Some(fee));
+
+    let src_address_id = "srcaddress".to_string();
+    let dst_address_id = "destaddress".to_string();
+
+    let order_address = command.order_id.clone();
+    let deal_order = protos::DealOrder {
+        blockchain: "ethereum".into(),
+        src_address: src_address_id.clone(),
+        dst_address: dst_address_id.clone(),
+        amount: 1.to_string(),
+        sighash: my_sighash.to_string(),
+        ..Default::default()
+    };
+
+    expect!(tx_ctx, get_state_entry where enclose!((order_address => address) move |a| &a == &address.as_str()), returning enclose!((deal_order) move |_| Ok(Some(deal_order.to_bytes()))));
+
+    let src_address = protos::Address {
+        blockchain: deal_order.blockchain.clone(),
+        value: "aaaaaaaaaa".into(),
+        network: "rinkeby".into(),
+        sighash: other_sighash.to_string(),
+    };
+    let dst_address = protos::Address {
+        blockchain: deal_order.blockchain.clone(),
+        value: "aaaaaaaaaa".into(),
+        network: "rinkeby".into(),
+        sighash: my_sighash.to_string(),
+    };
+
+    expect!(tx_ctx, get_state_entry where enclose!((dst_address_id => address) move |a| &a == &address), returning enclose!((dst_address) move |_| Ok(Some(dst_address.to_bytes()))));
+    expect!(tx_ctx, get_state_entry where enclose!((src_address_id => address) move |a| &a == &address), returning enclose!((src_address) move |_| Ok(Some(src_address.to_bytes()))));
+
+    let transfer_id = Address::with_prefix_key(
+        TRANSFER,
+        &string!(
+            &src_address.blockchain,
+            &command.blockchain_tx_id,
+            &src_address.network
+        ),
+    );
+
+    let transfer = protos::Transfer {
+        blockchain: src_address.blockchain.clone(),
+        src_address: dst_address_id.clone(),
+        dst_address: src_address_id.clone(),
+        order: command.order_id.clone(),
+        amount: (command.gain.clone() + 1u64).to_string(),
+        tx: command.blockchain_tx_id.clone(),
+        sighash: my_sighash.to_string(),
+        block: 0.to_string(),
+        processed: false,
+    };
+
+    expect!(tx_ctx, get_state_entry where enclose!((transfer_id => tf_id) move |a| &a == &tf_id.as_str()), returning move |_| Ok(None));
+
+    expect!(ctx, verify(_) -> Ok(()));
+
+    let guid = Guid::from("guid");
+
+    expect!(ctx, guid -> guid);
+
+    expect_set_state_entries(
+        &mut tx_ctx,
+        vec![
+            (transfer_id.to_string(), transfer.to_bytes()),
+            (wallet_id.to_string(), wallet_with(Some(0)).unwrap()),
+            make_fee(&guid, &my_sighash, None),
+        ],
+    );
+
+    execute_success(command, &request, &tx_ctx, &mut ctx);
 }
 
 // --- Housekeeping ---
