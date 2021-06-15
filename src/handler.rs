@@ -33,8 +33,8 @@ use sawtooth_sdk::{
     },
 };
 use settings::*;
-use std::{convert::TryFrom, default::Default, mem, ops::Deref};
-use types::CCApplyError::{InternalError, InvalidTransaction};
+use std::{convert::TryFrom, default::Default, ops::Deref};
+use types::CCApplyError::InvalidTransaction;
 use types::*;
 
 use enum_dispatch::enum_dispatch;
@@ -376,81 +376,6 @@ fn charge(txn_ctx: &dyn TransactionContext, sighash: &SigHash) -> TxnResult<(Wal
     Ok((wallet_id, wallet))
 }
 
-fn try_verify_external(
-    ctx: &mut HandlerContext,
-    gateway_command: &str,
-) -> TxnResult<Option<String>> {
-    log::warn!("Falling back to external gateway");
-    let new_local_sock = utils::create_socket(&ctx.gateway_context(), &ctx.gateway_endpoint())?;
-    mem::drop(mem::replace(ctx.local_gateway_sock_mut(), new_local_sock));
-
-    let address = ctx.get_setting("sawtooth.validator.gateway");
-
-    if let Some(mut external_gateway_address) = address {
-        log::info!("Found external gateway address");
-
-        if !external_gateway_address.starts_with("tcp://") {
-            external_gateway_address.insert_str(0, "tcp://");
-        }
-
-        let external_gateway_sock =
-            utils::create_socket(&ctx.gateway_context(), &external_gateway_address)?;
-        external_gateway_sock
-            .send(gateway_command, 0)
-            .map_err(|e| {
-                InternalError(format!(
-                    "Failed to send command to external gateway : {}",
-                    e
-                ))
-            })?;
-        let external_response = external_gateway_sock
-            .recv_string(0)
-            .map_err(|e| {
-                InternalError(format!(
-                    "Failed to receive response from external gateway : {}",
-                    e
-                ))
-            })?
-            .map_err(|_| InternalError("External gateway response was invalid UTF-8".into()))?;
-        Ok(Some(external_response))
-    } else {
-        Ok(None)
-    }
-}
-
-fn verify(ctx: &mut HandlerContext, gateway_command: &str) -> TxnResult<()> {
-    ctx.local_gateway_sock()
-        .send(gateway_command, 0)
-        .map_err(|e| InternalError(format!("Failed to send command to gateway : {}", e)))?;
-    let response = ctx.local_gateway_sock().recv_string(0);
-    let response = match response {
-        Ok(Ok(s)) if s.is_empty() || s == "miss" => {
-            try_verify_external(ctx, gateway_command)?.unwrap_or(s)
-        }
-        Err(_) => try_verify_external(ctx, gateway_command)?.ok_or_else(|| {
-            InternalError("Both local and external gateways were inaccessible".into())
-        })?,
-        Ok(Ok(s)) => s,
-        Ok(Err(_)) => {
-            return Err(InvalidTransaction(
-                "Gateway response was invalid UTF-8".into(),
-            ))?;
-        }
-    };
-
-    if response == "good" {
-        Ok(())
-    } else {
-        log::warn!(
-            "Gateway failed to validate transaction, got response: {}",
-            response
-        );
-        Err(InvalidTransaction(
-            "Couldn't validate the transaction".into(),
-        ))?
-    }
-}
-
 #[enum_dispatch(CCCommand)]
 trait CCTransaction: Sized {
     fn execute(
@@ -470,7 +395,10 @@ impl CCTransaction for SendFunds {
     ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
         if self.sighash == my_sighash {
-            bail_transaction!("Invalid destination", context = "Cannot send funds, the sender and receiver must be different");
+            bail_transaction!(
+                "Invalid destination",
+                context = "Cannot send funds, the sender and receiver must be different"
+            );
         }
 
         let src_wallet_id = my_sighash.to_wallet_id();
@@ -648,7 +576,7 @@ impl CCTransaction for RegisterTransfer {
                 &network,
             ]
             .join(" ");
-            verify(ctx, &gateway_command)?;
+            ctx.verify(&gateway_command)?;
         }
         let transfer = crate::protos::Transfer {
             blockchain,
@@ -1417,7 +1345,7 @@ impl CCTransaction for CollectCoins {
 
         //  FOR DEVELOPMENT, REMOVE FOR DEPLOYMENT
         if self.eth_address != "unused_if_hacked" {
-            verify(ctx, &gateway_command)?;
+            ctx.verify(&gateway_command)?;
         }
 
         let wallet_id = WalletId::from(&my_sighash);
@@ -1790,7 +1718,6 @@ impl CCTransactionHandler {
     }
 }
 
-#[cfg(not(test))]
 impl TransactionHandler for CCTransactionHandler {
     fn family_name(&self) -> String {
         NAMESPACE.into()
@@ -1821,16 +1748,17 @@ impl TransactionHandler for CCTransactionHandler {
         let params = utils::params_from_bytes(&request.payload)
             .log_err()
             .map_err(|e| ApplyError::InvalidTransaction(format!("Malformed payload : {}", e)))?;
+
         let command = CCCommand::try_from(params).log_err().to_apply_error()?;
-        let sock = utils::create_socket(&self.zmq_context, &self.gateway_endpoint)
-            .log_err()
-            .to_apply_error()?;
-        let mut handler_context = HandlerContext::builder()
-            .gateway_context(self.zmq_context.clone())
-            .local_gateway_sock(sock)
-            .gateway_endpoint(self.gateway_endpoint.clone())
-            .settings(self.settings.clone())
-            .build();
+
+        let mut handler_context = HandlerContext::create(
+            self.zmq_context.clone(),
+            self.gateway_endpoint.clone(),
+            self.settings.clone(),
+        )
+        .log_err()
+        .to_apply_error()?;
+
         command
             .execute(request, context, &mut handler_context)
             .log_err()
