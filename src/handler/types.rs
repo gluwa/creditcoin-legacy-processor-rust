@@ -27,9 +27,9 @@ impl fmt::Display for CCApplyError {
     }
 }
 
-impl Into<ApplyError> for CCApplyError {
-    fn into(self) -> ApplyError {
-        match self {
+impl From<CCApplyError> for ApplyError {
+    fn from(err: CCApplyError) -> Self {
+        match err {
             CCApplyError::InvalidTransaction(e) => ApplyError::InvalidTransaction(e),
             CCApplyError::InternalError(e) => ApplyError::InternalError(e),
         }

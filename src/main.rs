@@ -1,4 +1,8 @@
-#![allow(clippy::suspicious_operation_groupings)]
+#![allow(
+    clippy::suspicious_operation_groupings,
+    clippy::try_err,
+    clippy::wrong_self_convention
+)]
 #![deny(unused_must_use)]
 #![cfg_attr(test, allow(dead_code, unused_imports))]
 

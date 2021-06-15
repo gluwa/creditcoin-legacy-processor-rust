@@ -37,7 +37,7 @@ macro_rules! bail_transaction {
 
     ($s: expr, context = $c: expr) => {
         use anyhow::Context;
-        return bail_transaction!(makeit $s).map_err(|e| anyhow::Error::from(e)).context($c);
+        return bail_transaction!(makeit $s).map_err(anyhow::Error::from).context($c);
     };
     ($s: literal, context = $c: literal, $($t2: tt),*) => {
         bail_transaction!($s, context = format!($c, $($t2),*));
@@ -211,7 +211,7 @@ pub fn get_state_data<A: AsRef<str>>(
     let address = address.as_ref();
     let state_data = tx_ctx
         .get_state_entry(address)
-        .map_err(|e| CCApplyError::from(e))?
+        .map_err(CCApplyError::from)?
         .ok_or_else(|| {
             CCApplyError::InvalidTransaction(format!("Existing state expected {}", address))
         })?;
@@ -225,7 +225,7 @@ pub fn try_get_state_data<A: AsRef<str>>(
     let address = address.as_ref();
     Ok(tx_ctx
         .get_state_entry(address)
-        .map_err(|e| CCApplyError::from(e))?
+        .map_err(CCApplyError::from)?
         .map(Into::into))
 }
 
