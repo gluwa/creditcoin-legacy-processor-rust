@@ -6,8 +6,8 @@ use std::{
 };
 
 use dashmap::DashMap;
-use log::{info, warn};
-use sawtooth_sdk::processor::EmptyTransactionContext;
+use log::{info, trace, warn};
+use sawtooth_sdk::{messaging::stream::ReceiveError, processor::EmptyTransactionContext};
 
 use crate::handler::{constants::SETTINGS_NAMESPACE, filter, types::CCApplyError};
 
@@ -56,7 +56,7 @@ impl SettingsUpdater {
     fn should_stop(receiver: &mpsc::Receiver<()>) -> bool {
         match receiver.try_recv() {
             Ok(_) => {
-                log::warn!("Received stop command");
+                log::info!("Received stop command");
                 true
             }
             Err(mpsc::TryRecvError::Disconnected) => {
@@ -68,7 +68,7 @@ impl SettingsUpdater {
     }
     fn update_settings(tx_ctx: &EmptyTransactionContext, settings: &Settings) -> TxnResult<()> {
         tx_ctx.flush();
-        info!("updating settings");
+        trace!("updating settings");
         use sawtooth_sdk::messages::Message;
         filter(tx_ctx, SETTINGS_NAMESPACE, |_, proto| {
             let setting = sawtooth_sdk::messages::setting::Setting::parse_from_bytes(&proto)
@@ -84,7 +84,7 @@ impl SettingsUpdater {
             }
             Ok(())
         })?;
-        info!("finished updating setings");
+        trace!("finished updating setings");
 
         Ok(())
     }
@@ -93,17 +93,21 @@ impl SettingsUpdater {
 
         let handle = thread::spawn(move || 'outer: loop {
             if SettingsUpdater::should_stop(&receiver) {
-                log::warn!("stopping settings updater");
+                log::info!("stopping settings updater");
                 break;
             }
             thread::sleep(Duration::from_secs(6));
             if let Err(e) = SettingsUpdater::update_settings(&tx_ctx, &settings) {
-                log::warn!("Error occurred while updating settings: {}", e);
+                if let Some(ReceiveError::TimeoutError) = e.downcast_ref::<ReceiveError>() {
+                    log::trace!("settings updater timed out waiting on reply from the validator");
+                } else {
+                    log::warn!("Error occurred while updating settings: {}", e);
+                }
             }
             for _ in 0..10 {
                 thread::sleep(Duration::from_secs(6));
                 if SettingsUpdater::should_stop(&receiver) {
-                    log::warn!("stopping settings updater");
+                    log::info!("stopping settings updater");
                     break 'outer;
                 }
             }
@@ -124,9 +128,9 @@ impl SettingsUpdater {
 
 impl Drop for SettingsUpdater {
     fn drop(&mut self) {
-        log::warn!("dropping settings updater");
+        info!("dropping settings updater");
         self.exit();
-        log::warn!("joining updater thread");
+        info!("joining updater thread");
         self.handle.take().unwrap().join().unwrap();
     }
 }
