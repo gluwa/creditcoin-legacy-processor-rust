@@ -24,7 +24,7 @@ use crate::handler::settings::Settings;
 use crate::handler::types::{CCApplyError, SigHash};
 use crate::handler::types::{Guid, WalletId};
 use crate::handler::utils;
-use crate::string;
+use crate::{protos, string};
 
 use super::context::mocked::MockHandlerContext;
 use super::types::Address;
@@ -143,6 +143,34 @@ macro_rules! expect {
             }, 1 times);
             wallet_with(Some($amt.clone())).unwrap()
         }
+    };
+    ($id: ident, sighash -> $sig: ident) => {
+        expect!($id, sighash with {
+            |_| true
+        }, returning {
+            enclose!(($sig) move |_| Ok($sig))
+        })
+    };
+    ($id: ident, sighash -> $sig: expr) => {
+        expect!($id, sighash with {
+            |_| true
+        }, returning {
+            enclose!(($sig) move |_| Ok(crate::handler::types::SigHash($sig.to_string())))
+        })
+    };
+    ($id: ident, guid -> $guid: ident) => {
+        expect!($id, guid with {
+            |_| true
+        }, returning {
+            enclose!(($guid) move |_| $guid)
+        })
+    };
+    ($id: ident, guid -> $guid: literal) => {
+        expect!($id, guid with {
+            |_| true
+        }, returning {
+            move |_| crate::handler::types::Guid($guid.to_string())
+        })
     };
 }
 
@@ -992,7 +1020,14 @@ fn expect_set_state_entries(tx_ctx: &mut MockTransactionContext, entries: Vec<(S
     expect!(tx_ctx, set_state_entries with {
         let entries = entries.into_iter().sorted().collect_vec();
         move |e| {
-            itertools::equal(&entries, &itertools::sorted(e.clone()).collect_vec())
+            let s = itertools::sorted(e.clone());
+            for (entry, other) in entries.iter().zip(s) {
+                if entry != &other {
+                    println!("Not equal! Expected {:?} -- Found {:?}", entry, other);
+                    return false;
+                }
+            }
+            true
         }
     }, returning |_| Ok(()));
 }
@@ -1024,8 +1059,11 @@ fn execute_failure(
         _ => panic!("Expected an InvalidTransaction error"),
     };
 }
+
+// --- SendFunds ---
+
 #[test]
-fn send_funds_basic() {
+fn send_funds_success() {
     init_logs();
     let destination = SigHash("destination".into());
     let command = SendFunds {
@@ -1042,7 +1080,7 @@ fn send_funds_basic() {
     let dest_wallet_id = WalletId::from(&destination);
 
     let mut ctx = MockHandlerContext::default();
-    expect!(ctx, sighash(r), returning enclose!((my_sighash) move | _ | Ok(my_sighash)));
+    expect!(ctx, sighash -> my_sighash);
 
     let amount_needed = command.amount.clone() + &*TX_FEE;
 
@@ -1051,7 +1089,7 @@ fn send_funds_basic() {
 
     let guid = Guid("txnguid".into());
 
-    expect!(ctx, guid(_), returning enclose!((guid) move | _ | guid));
+    expect!(ctx, guid -> guid);
 
     expect_set_state_entries(
         &mut tx_ctx,
@@ -1083,7 +1121,7 @@ fn send_funds_cannot_afford_fee() {
     let my_wallet_id = WalletId::from(&my_sighash);
 
     let mut ctx = MockHandlerContext::default();
-    expect!(ctx, sighash(r), returning enclose!((my_sighash) move | _ | Ok(my_sighash)));
+    expect!(ctx, sighash -> my_sighash);
 
     expect!(tx_ctx, get balance at my_wallet_id -> Some(1));
 
@@ -1108,7 +1146,7 @@ fn send_funds_cannot_afford_amount() {
     let my_wallet_id = WalletId::from(&my_sighash);
 
     let mut ctx = MockHandlerContext::default();
-    expect!(ctx, sighash(r), returning enclose!((my_sighash) move | _ | Ok(my_sighash)));
+    expect!(ctx, sighash -> my_sighash);
 
     expect!(tx_ctx, get balance at my_wallet_id -> Some(TX_FEE.clone()));
 
@@ -1132,10 +1170,117 @@ fn send_funds_to_self() {
     let my_sighash = SigHash::from("mysighash");
 
     let mut ctx = MockHandlerContext::default();
-    expect!(ctx, sighash(r), returning enclose!((my_sighash) move | _ | Ok(my_sighash)));
+    expect!(ctx, sighash -> my_sighash);
 
     execute_failure(command, &request, &tx_ctx, &mut ctx, "Invalid destination");
 }
+
+// --- RegisterAddress ---
+
+fn charge_fee(tx_ctx: &mut MockTransactionContext, sighash: &SigHash) {
+    let wallet_id = WalletId::from(sighash);
+    let fee = TX_FEE.clone();
+    expect!(tx_ctx, get balance at wallet_id -> Some(fee));
+}
+
+#[test]
+fn register_address_success() {
+    init_logs();
+
+    let command = RegisterAddress {
+        blockchain: "ethereum".into(),
+        address: "myaddress".into(),
+        network: "rinkeby".into(),
+    };
+
+    let request = TpProcessRequest::default();
+
+    let mut tx_ctx = MockTransactionContext::default();
+    let mut ctx = MockHandlerContext::default();
+
+    let my_sighash = SigHash::from("mysighash");
+    let guid = Guid::from("myguid");
+
+    expect!(ctx, sighash -> my_sighash);
+    expect!(ctx, guid -> guid);
+
+    let wallet_id = WalletId::from(&my_sighash);
+    let fee = TX_FEE.clone();
+    expect!(tx_ctx, get balance at wallet_id -> Some(fee));
+
+    let register_id = string!("ethereum", "myaddress", "rinkeby");
+    let address = Address::with_prefix_key(ADDR, &register_id);
+
+    // check if there is an existing address, in this case we will pretend that there is not one
+    expect!(tx_ctx, get_state_entry with enclose!((address) move |a| &a == &address.as_str()), returning |_| Ok(None));
+
+    let address_proto = crate::protos::Address {
+        blockchain: command.blockchain.clone(),
+        value: command.address.clone(),
+        network: command.network.clone(),
+        sighash: my_sighash.to_string(),
+    };
+
+    expect_set_state_entries(
+        &mut tx_ctx,
+        vec![
+            (address.to_string(), address_proto.to_bytes()),
+            (wallet_id.to_string(), wallet_with(Some(0)).unwrap()),
+            make_fee(&guid, &my_sighash, None),
+        ],
+    );
+
+    execute_success(command, &request, &tx_ctx, &mut ctx);
+}
+
+#[test]
+fn register_address_taken() {
+    init_logs();
+
+    init_logs();
+
+    let command = RegisterAddress {
+        blockchain: "ethereum".into(),
+        address: "myaddress".into(),
+        network: "rinkeby".into(),
+    };
+
+    let request = TpProcessRequest::default();
+
+    let mut tx_ctx = MockTransactionContext::default();
+    let mut ctx = MockHandlerContext::default();
+
+    let my_sighash = SigHash::from("mysighash");
+
+    expect!(ctx, sighash -> my_sighash);
+
+    let wallet_id = WalletId::from(&my_sighash);
+    let fee = TX_FEE.clone();
+    expect!(tx_ctx, get balance at wallet_id -> Some(fee));
+
+    let register_id = string!("ethereum", "myaddress", "rinkeby");
+    let address = Address::with_prefix_key(ADDR, &register_id);
+
+    let existing_address = protos::Address {
+        blockchain: command.blockchain.clone(),
+        value: command.address.clone(),
+        network: command.network.clone(),
+        sighash: my_sighash.to_string(),
+    };
+
+    // check if there is an existing address, in this case we will pretend that there IS one
+    expect!(tx_ctx, get_state_entry with enclose!((address) move |a| &a == &address.as_str()), returning move |_| Ok(Some(existing_address.to_bytes())));
+
+    execute_failure(
+        command,
+        &request,
+        &tx_ctx,
+        &mut ctx,
+        "The address has been already registered",
+    );
+}
+
+// --- Housekeeping ---
 
 #[test]
 fn housekeeping_reward_in_chain() {
