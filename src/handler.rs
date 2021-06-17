@@ -763,7 +763,9 @@ impl CCTransaction for AddOffer {
         if state_data.is_some() {
             bail_transaction!(
                 "Duplicate id",
-                context = "There is existing state data at address {:?}",
+                context = "There is an existing offer for the ask order {} and bid order {}; already state data at {:?}",
+                {&self.ask_order_id},
+                {&self.bid_order_id},
                 id
             );
         }
@@ -856,7 +858,7 @@ impl CCTransaction for AddOffer {
             sighash: my_sighash.clone().into(),
         };
 
-        let mut states = vec![(id.clone().into(), state_data.into())];
+        let mut states = vec![];
 
         add_state(&mut states, id.into(), &offer)?;
         add_fee_state(ctx, request, &my_sighash, &mut states, &wallet_id, &wallet)?;
