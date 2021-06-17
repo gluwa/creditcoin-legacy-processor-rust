@@ -1381,6 +1381,83 @@ fn register_transfer_success() {
     execute_success(command, &request, &tx_ctx, &mut ctx);
 }
 
+// --- AddAskOrder ---
+
+#[test]
+fn add_ask_order_success() {
+    init_logs();
+
+    let command = AddAskOrder {
+        address_id: "addressid".into(),
+        amount_str: "1000".into(),
+        interest: "10000".into(),
+        maturity: "100".into(),
+        fee: "1".into(),
+        expiration: 10000,
+    };
+
+    let request = TpProcessRequest {
+        tip: 1,
+        ..Default::default()
+    };
+
+    let mut tx_ctx = MockTransactionContext::default();
+    let mut ctx = MockHandlerContext::default();
+
+    let my_sighash = SigHash::from("mysighash");
+    expect!(ctx, sighash -> my_sighash);
+
+    let guid = Guid::from("txnguid");
+    expect!(ctx, guid -> guid);
+    expect!(ctx, guid -> guid);
+
+    let address = Address::with_prefix_key(ASK_ORDER, guid.as_str());
+
+    expect!(tx_ctx, get_state_entry where enclose!((address) move |a| a == address.as_str()), returning |_| Ok(None));
+
+    let address_proto = protos::Address {
+        blockchain: "ethereum".into(),
+        network: "rinkeby".into(),
+        sighash: my_sighash.clone().into(),
+        value: "somevalue".into(),
+    };
+
+    expect!(tx_ctx,
+        get_state_entry
+            where enclose!((command.address_id => address_id) move |a| a == &address_id),
+        returning enclose!((my_sighash, address_proto) move |_| Ok(Some(
+            address_proto.to_bytes()
+        )))
+    );
+
+    let ask_order = protos::AskOrder {
+        blockchain: address_proto.blockchain.clone(),
+        address: command.address_id.clone(),
+        amount: command.amount_str.clone(),
+        interest: command.interest.clone(),
+        maturity: command.maturity.clone(),
+        fee: command.fee.clone(),
+        expiration: command.expiration,
+        block: (request.tip - 1).to_string(),
+        sighash: my_sighash.to_string(),
+    };
+
+    let wallet_id = WalletId::from(&my_sighash);
+
+    expect!(tx_ctx, get balance at wallet_id -> Some(TX_FEE.clone()));
+
+    expect_set_state_entries(
+        &mut tx_ctx,
+        vec![
+            (address.into(), ask_order.to_bytes()),
+            (wallet_id.to_string(), wallet_with(Some(0)).unwrap()),
+            make_fee(&guid, &my_sighash, None),
+        ],
+    );
+
+    execute_success(command, &request, &tx_ctx, &mut ctx);
+}
+
 // --- Housekeeping ---
 
 #[test]

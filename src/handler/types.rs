@@ -73,11 +73,24 @@ impl Deref for SigHash {
     }
 }
 
+impl fmt::Display for SigHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Default)]
 pub struct WalletId(pub String);
 
 impl From<&SigHash> for WalletId {
     fn from(sig: &SigHash) -> Self {
+        let buf = string!(NAMESPACE_PREFIX, WALLET, sig.as_str());
+        WalletId(buf)
+    }
+}
+
+impl From<SigHash> for WalletId {
+    fn from(sig: SigHash) -> Self {
         let buf = string!(NAMESPACE_PREFIX, WALLET, sig.as_str());
         WalletId(buf)
     }
