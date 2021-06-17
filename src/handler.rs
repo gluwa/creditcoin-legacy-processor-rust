@@ -349,10 +349,13 @@ impl TryFrom<Value> for CCCommand {
                 }
                 .into(),
 
-                _ => bail_transaction!("Invalid verb : {:?}", verb),
+                _ => bail_transaction!("Invalid verb in parameters: {:?}", verb),
             })
         } else {
-            bail_transaction!("Expected a Map at the top level, found {:?}", value)
+            bail_transaction!(
+                "Expected a Map at the top level of parameters, found {:?}",
+                value
+            )
         }
     }
 }
@@ -368,7 +371,8 @@ fn charge(txn_ctx: &dyn TransactionContext, sighash: &SigHash) -> TxnResult<(Wal
     if balance < *TX_FEE {
         bail_transaction!(
             "Insufficient funds",
-            context = "Wallet balance does not cover transaction fee"
+            context = "Wallet balance at {:?} does not cover transaction fee",
+            wallet_id
         );
     }
 
@@ -526,14 +530,20 @@ impl CCTransaction for RegisterTransfer {
             amount_str = order.amount;
         } else if order_id.starts_with(REPAYMENT_ORDER_PREFIX.as_str()) {
             if gain != 0 {
-                bail_transaction!("gain must be 0 for repayment orders");
+                bail_transaction!(
+                    "gain must be 0 for repayment orders",
+                    context = "The given order ID corresponds to a repayment order"
+                );
             }
             let order = RepaymentOrder::try_parse(&state_data)?;
             src_address_id = order.src_address;
             dest_address_id = order.dst_address;
             amount_str = order.amount;
         } else {
-            bail_transaction!("Unexpected referred order");
+            bail_transaction!(
+                "Unexpected referred order",
+                context = "The order ID for RegisterTransfer must be a deal or repayment order"
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &src_address_id)?;
@@ -542,21 +552,40 @@ impl CCTransaction for RegisterTransfer {
         let dest_address = crate::protos::Address::try_parse(&state_data)?;
 
         if src_address.sighash != *my_sighash {
-            bail_transaction!("Only the owner can register");
+            bail_transaction!(
+                "Only the owner can register",
+                context = "The source address is owned by {:?}, not {:?}",
+                { src_address.sighash },
+                my_sighash
+            );
         }
         let blockchain = src_address.blockchain;
         if dest_address.blockchain != blockchain {
-            bail_transaction!("Source and destination addresses must be on the same blockchain");
+            bail_transaction!(
+                "Source and destination addresses must be on the same blockchain",
+                context = "The destination is on the blockchain {:?}, but the source is on {:?}",
+                { dest_address.blockchain },
+                blockchain
+            );
         }
         let network = src_address.network;
         if dest_address.network != network {
-            bail_transaction!("Source and destination addresses must be on the same network");
+            bail_transaction!(
+                "Source and destination addresses must be on the same network",
+                context = "The destination is on the network {:?}, but the source is on {:?}",
+                { dest_address.network },
+                network
+            );
         }
         let key = string!(&blockchain, &blockchain_tx_id, &network);
         let transfer_id = Address::with_prefix_key(TRANSFER, &key);
         let state_data = try_get_state_data(tx_ctx, &transfer_id)?;
         if state_data.is_some() {
-            bail_transaction!("The transfer has been already registered");
+            bail_transaction!(
+                "The transfer has been already registered",
+                context = "There is existing state data at address {:?}",
+                transfer_id
+            );
         }
         if blockchain_tx_id == "0" {
             amount_str = "0".into();
@@ -619,7 +648,11 @@ impl CCTransaction for AddAskOrder {
 
         let id = Address::with_prefix_key(ASK_ORDER, guid.as_str());
         if try_get_state_data(tx_ctx, &id)?.is_some() {
-            bail_transaction!("Duplicate id");
+            bail_transaction!(
+                "Duplicate id",
+                context = "There is existing state data at address {:?}",
+                id
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &address_id)?;
@@ -627,7 +660,12 @@ impl CCTransaction for AddAskOrder {
         let address = crate::protos::Address::try_parse(&state_data)?;
 
         if address.sighash != my_sighash.as_str() {
-            bail_transaction!("The address doesn't belong to the party");
+            bail_transaction!(
+                "The address doesn't belong to the party",
+                context = "The address is owned by {:?}, not {:?}",
+                { address.sighash },
+                my_sighash
+            );
         }
 
         let ask_order = crate::protos::AskOrder {
@@ -665,14 +703,23 @@ impl CCTransaction for AddBidOrder {
         let id = Address::with_prefix_key(BID_ORDER, &guid);
         let state_data = try_get_state_data(tx_ctx, &id)?;
         if state_data.is_some() {
-            bail_transaction!("Duplicate id");
+            bail_transaction!(
+                "Duplicate id",
+                context = "There is existing state data at address {:?}",
+                id
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &self.address_id)?;
 
         let address = crate::protos::Address::try_parse(&state_data)?;
         if address.sighash != my_sighash.as_str() {
-            bail_transaction!("The address doesn't belong to the party");
+            bail_transaction!(
+                "The address doesn't belong to the party",
+                context = "The address is owned by {:?}, not the party's sighash {:?}",
+                { address.sighash },
+                my_sighash
+            );
         }
 
         let bid_order = crate::protos::BidOrder {
@@ -714,7 +761,11 @@ impl CCTransaction for AddOffer {
         let state_data = try_get_state_data(tx_ctx, &id)?;
 
         if state_data.is_some() {
-            bail_transaction!("Duplicate id");
+            bail_transaction!(
+                "Duplicate id",
+                context = "There is existing state data at address {:?}",
+                id
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &self.ask_order_id)?;
@@ -722,7 +773,12 @@ impl CCTransaction for AddOffer {
         let ask_order = crate::protos::AskOrder::try_parse(&state_data)?;
 
         if ask_order.sighash != my_sighash.as_str() {
-            bail_transaction!("Only an investor can add an offer");
+            bail_transaction!(
+                "Only an investor can add an offer",
+                context = "The sighash on the ask order is {:?}, not {:?}",
+                { ask_order.sighash },
+                my_sighash
+            );
         }
 
         let head = last_block(request);
@@ -847,7 +903,12 @@ impl CCTransaction for AddDealOrder {
         let state_data = get_state_data(tx_ctx, &offer.bid_order)?;
         let bid_order = crate::protos::BidOrder::try_parse(&state_data)?;
         if bid_order.sighash != my_sighash.as_str() {
-            bail_transaction!("Only a fundraiser can add a deal order");
+            bail_transaction!(
+                "Only a fundraiser can add a deal order",
+                context = "The sighash on the bid order is {:?}, not {:?}",
+                { bid_order.sighash },
+                my_sighash
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &offer.ask_order)?;
@@ -861,7 +922,12 @@ impl CCTransaction for AddDealOrder {
         let mut balance = Integer::try_parse(&wallet.amount)?;
         let fee = Integer::try_parse(&bid_order.fee)? + &*TX_FEE;
         if balance < fee {
-            bail_transaction!("Insufficient funds");
+            bail_transaction!(
+                "Insufficient funds",
+                context = "The wallet balance at {:?} cannot cover the total fee amount {:?}",
+                wallet_id,
+                fee
+            );
         }
         balance -= fee;
 
@@ -913,35 +979,72 @@ impl CCTransaction for CompleteDealOrder {
         let mut deal_order = crate::protos::DealOrder::try_parse(&state_data)?;
 
         if !deal_order.loan_transfer.is_empty() {
-            bail_transaction!("The deal has been already completed");
+            bail_transaction!(
+                "The deal has been already completed",
+                context = "The loan transfer is empty on the deal order with ID {:?}",
+                { self.deal_order_id }
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &deal_order.src_address)?;
         let src_address = crate::protos::Address::try_parse(&state_data)?;
 
         if src_address.sighash != my_sighash.as_str() {
-            bail_transaction!("Only an investor can complete a deal");
+            bail_transaction!(
+                "Only an investor can complete a deal",
+                context = "The source address is owned by {:?}, not {:?}",
+                { src_address.sighash },
+                my_sighash
+            );
         }
 
         let head = last_block(request);
         let start = Integer::try_parse(&deal_order.block)?;
-        let elapsed = head - start;
+        let elapsed = head - &start;
 
         if deal_order.expiration < elapsed {
-            bail_transaction!("The order has expired");
+            bail_transaction!(
+                "The order has expired",
+                context = "The deal order specified an expiration of {} blocks, and started at block {}; Now {} blocks have elapsed",
+                { deal_order.expiration },
+                start,
+                elapsed
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &self.transfer_id)?;
         let mut transfer = protos::Transfer::try_parse(&state_data)?;
 
-        if transfer.order != self.deal_order_id || transfer.amount != deal_order.amount {
-            bail_transaction!("The transfer doesn't match the deal order");
+        if transfer.order != self.deal_order_id {
+            bail_transaction!(
+                "The transfer doesn't match the deal order",
+                context = "The transfer order ID is {:?} but the deal order ID is {:?}",
+                { transfer.order },
+                { self.deal_order_id }
+            );
+        }
+        if transfer.amount != deal_order.amount {
+            bail_transaction!(
+                "The transfer doesn't match the deal order",
+                context = "The transfer amount is {} but the deal order is for the amount {}",
+                { transfer.amount },
+                { deal_order.amount }
+            );
         }
         if transfer.sighash != my_sighash.as_str() {
-            bail_transaction!("The transfer doesn't match the signer");
+            bail_transaction!(
+                "The transfer doesn't match the signer",
+                context = "The sighash on the transfer is {:?}, not {:?}",
+                { transfer.sighash },
+                my_sighash
+            );
         }
         if transfer.processed {
-            bail_transaction!("The transfer has been already processed");
+            bail_transaction!(
+                "The transfer has been already processed",
+                context = "The transfer with ID {} is marked as processed",
+                { self.transfer_id }
+            );
         }
 
         transfer.processed = true;
@@ -955,7 +1058,7 @@ impl CCTransaction for CompleteDealOrder {
 
         if state_data.is_empty() {
             if fee < 0 {
-                bail_transaction!("Insufficient funds");
+                bail_transaction!("Insufficient funds", context = "The submitter with sighash {:?} has no wallet, and the deal order's fee of {} cannot cover the transaction fee", my_sighash, {deal_order.fee});
             }
             wallet.amount = fee.to_string();
         } else {
@@ -963,7 +1066,7 @@ impl CCTransaction for CompleteDealOrder {
             let mut balance = Integer::try_parse(&wallet.amount)?;
             balance += fee;
             if balance < 0 {
-                bail_transaction!("Insufficient funds");
+                bail_transaction!("Insufficient funds", context = "The wallet balance at {:?} plus the deal order fee of {} does not cover the transaction fee", wallet_id, {deal_order.fee});
             }
             wallet.amount = balance.to_string();
         }
@@ -1003,15 +1106,28 @@ impl CCTransaction for LockDealOrder {
         let mut deal_order = protos::DealOrder::try_parse(&state_data)?;
 
         if !deal_order.lock.is_empty() {
-            bail_transaction!("The deal has been already locked");
+            bail_transaction!(
+                "The deal has been already locked",
+                context = "The deal order with ID {} cannot be locked",
+                { self.deal_order_id }
+            );
         }
 
         if deal_order.loan_transfer.is_empty() {
-            bail_transaction!("The deal has not been completed yet");
+            bail_transaction!(
+                "The deal has not been completed yet",
+                context = "The deal order with ID {} does not have a completed loan transfer",
+                { self.deal_order_id }
+            );
         }
 
         if deal_order.sighash != my_sighash.as_str() {
-            bail_transaction!("Only a fundraiser can lock a deal");
+            bail_transaction!(
+                "Only a fundraiser can lock a deal",
+                context = "The sighash on the deal order is {}, not {:?}",
+                { deal_order.sighash },
+                my_sighash
+            );
         }
 
         deal_order.lock = my_sighash.clone().into();
@@ -1042,28 +1158,59 @@ impl CCTransaction for CloseDealOrder {
         let mut deal_order = protos::DealOrder::try_parse(&state_data)?;
 
         if !deal_order.repayment_transfer.is_empty() {
-            bail_transaction!("The deal has been already closed");
+            bail_transaction!(
+                "The deal has been already closed",
+                context = "The deal order with ID {} has already completed the repayment transfer",
+                { self.deal_order_id }
+            );
         }
 
         if deal_order.sighash != my_sighash.as_str() {
-            bail_transaction!("Only a fundraiser can close a deal");
+            bail_transaction!(
+                "Only a fundraiser can close a deal",
+                context = "The sighash on the deal order is {}, not {:?}",
+                { deal_order.sighash },
+                my_sighash
+            );
         }
 
         if deal_order.lock != my_sighash.as_str() {
-            bail_transaction!("The deal must be locked first");
+            bail_transaction!(
+                "The deal must be locked first",
+                context = "The lock on the deal order is {:?}, not the submitter sighash {:?}",
+                { deal_order.lock },
+                my_sighash
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &self.transfer_id)?;
         let mut repayment_transfer = protos::Transfer::try_parse(&state_data)?;
 
         if repayment_transfer.order != self.deal_order_id {
-            bail_transaction!("The transfer doesn't match the order");
+            bail_transaction!(
+                "The transfer doesn't match the order",
+                context = "The order on the repayment transfer with ID {:?} is {}, not the expected deal order with ID {:?}",
+                { self.transfer_id },
+                { repayment_transfer.order },
+                { self.deal_order_id }
+            );
         }
         if repayment_transfer.sighash != my_sighash.as_str() {
-            bail_transaction!("The transfer doesn't match the signer");
+            bail_transaction!(
+                "The transfer doesn't match the signer",
+                context =
+                    "The sighash on the repayment transfer {:?} is {:?}, not the submitter sighash {:?}",
+                { self.transfer_id },
+                { repayment_transfer.sighash },
+                my_sighash
+            );
         }
         if repayment_transfer.processed {
-            bail_transaction!("The transfer has been already processed");
+            bail_transaction!(
+                "The transfer has been already processed",
+                context = "The repayment transfer with ID {:?} is already marked as processed",
+                { self.transfer_id }
+            );
         }
         repayment_transfer.processed = true;
 
@@ -1083,7 +1230,7 @@ impl CCTransaction for CloseDealOrder {
         let repay_amount = Integer::try_parse(&repayment_transfer.amount)?;
 
         if repay_amount < amount {
-            bail_transaction!("The transfer doesn't match the order");
+            bail_transaction!("The transfer doesn't match the order", context = "The amount on the repayment transfer is {}, but the total expected amount is {}", repay_amount, amount);
         }
 
         deal_order.repayment_transfer = self.transfer_id.clone();
@@ -1114,17 +1261,33 @@ impl CCTransaction for Exempt {
         let state_data = get_state_data(tx_ctx, &self.deal_order_id)?;
         let mut deal_order = protos::DealOrder::try_parse(&state_data)?;
         if !deal_order.repayment_transfer.is_empty() {
-            bail_transaction!("The deal has been already closed");
+            bail_transaction!(
+                "The deal has been already closed",
+                context =
+                    "The repayment transfer is already filled for the deal order with ID {:?}",
+                { self.deal_order_id }
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &self.transfer_id)?;
         let mut transfer = protos::Transfer::try_parse(&state_data)?;
 
         if transfer.order != self.deal_order_id {
-            bail_transaction!("The transfer doesn't match the order");
+            bail_transaction!(
+                "The transfer doesn't match the order",
+                context =
+                    "The order ID on the transfer {} is {:?}, not the given deal order ID {:?}",
+                { self.transfer_id },
+                { transfer.order },
+                { self.deal_order_id }
+            );
         }
         if transfer.processed {
-            bail_transaction!("The transfer has been already processed");
+            bail_transaction!(
+                "The transfer has been already processed",
+                context = "The transfer with ID {} is already marked as complete",
+                { self.transfer_id }
+            );
         }
         transfer.processed = true;
 
@@ -1132,7 +1295,14 @@ impl CCTransaction for Exempt {
         let address = protos::Address::try_parse(&state_data)?;
 
         if address.sighash != my_sighash.as_str() {
-            bail_transaction!("Only an investor can exempt a deal");
+            bail_transaction!(
+                "Only an investor can exempt a deal",
+                context = "The owner of the source address {} on the deal order {} is {:?}, not the submitter {:?}",
+                { deal_order.src_address },
+                { self.deal_order_id },
+                { address.sighash },
+                my_sighash
+            );
         }
 
         deal_order.repayment_transfer = self.transfer_id.clone();
@@ -1167,34 +1337,83 @@ impl CCTransaction for AddRepaymentOrder {
         let state_data = try_get_state_data(tx_ctx, &id)?;
 
         if state_data.is_some() {
-            bail_transaction!("Duplicated id");
+            bail_transaction!(
+                "Duplicated id",
+                context = "There is existing state data at the address {:?}",
+                id
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &self.deal_order_id)?;
         let deal_order = protos::DealOrder::try_parse(&state_data)?;
         if deal_order.sighash == my_sighash.as_str() {
-            bail_transaction!("Fundraisers cannot create repayment orders");
-        }
-        if deal_order.loan_transfer.is_empty() || !deal_order.repayment_transfer.is_empty() {
             bail_transaction!(
-                "A repayment order can be created only for a deal with an active loan"
+                "Fundraisers cannot create repayment orders",
+                context = "The sighash on the deal order {} is {}, not the submitter sighash {:?}",
+                { self.deal_order_id },
+                { deal_order.sighash },
+                my_sighash
+            );
+        }
+        if deal_order.loan_transfer.is_empty() {
+            bail_transaction!(
+                "A repayment order can be created only for a deal with an active loan",
+                context = "The loan transfer is emptry on the deal order with ID {:?}",
+                { self.deal_order_id }
+            );
+        } else if !deal_order.repayment_transfer.is_empty() {
+            bail_transaction!(
+                "A repayment order can be created only for a deal with an active loan",
+                context =
+                    "The repayment transfer is still present ({:?}) on the deal order with ID {}",
+                { deal_order.repayment_transfer },
+                { self.deal_order_id }
             );
         }
 
         let state_data = get_state_data(tx_ctx, &deal_order.src_address)?;
         let src_address = protos::Address::try_parse(&state_data)?;
         if src_address.sighash == my_sighash.as_str() {
-            bail_transaction!("Investors cannot create repayment orders");
+            bail_transaction!(
+                "Investors cannot create repayment orders",
+                context = "The source address {:?} for the deal order {} is owned by {}, not the submitter {:?}",
+                { &src_address },
+                { self.deal_order_id },
+                { &src_address.sighash },
+                my_sighash
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &self.address_id)?;
         let new_address = protos::Address::try_parse(&state_data)?;
 
-        if src_address.blockchain != new_address.blockchain
-            || src_address.network != new_address.network
-            || src_address.value == new_address.value
-        {
-            bail_transaction!("Invalid address");
+        if src_address.blockchain != new_address.blockchain {
+            bail_transaction!(
+                "Invalid address",
+                context = "The source address {:?} is on blockchain {}, but the new address {:?} is on blockchain {}; they must match",
+                src_address,
+                { &src_address.blockchain },
+                new_address,
+                { &new_address.blockchain }
+            );
+        } else if src_address.network != new_address.network {
+            bail_transaction!(
+                "Invalid address",
+                context = "The source address {:?} is on network {}, but the new address {:?} is on network {}; they must match",
+                src_address,
+                { &src_address.network },
+                new_address,
+                { &new_address.network }
+            );
+        } else if src_address.value == new_address.value {
+            bail_transaction!(
+                "Invalid address",
+                context = "The vaue at address {:?} is {:?}, but the value at the new address {:?} is {:?}; they must match",
+                src_address,
+                { &src_address.value },
+                new_address,
+                { &new_address.value }
+            );
         }
 
         let repayment_order = protos::RepaymentOrder {
@@ -1236,13 +1455,26 @@ impl CCTransaction for CompleteRepaymentOrder {
         let state_data = get_state_data(tx_ctx, &repayment_order.dst_address)?;
         let address = protos::Address::try_parse(&state_data)?;
         if address.sighash != my_sighash.as_str() {
-            bail_transaction!("Only an investor can complete a repayment order");
+            bail_transaction!(
+                "Only an investor can complete a repayment order",
+                context = "The owner of the destination address {:?} for the repayment order {} is {}, not the submitter {:?}",
+                { &address },
+                { self.repayment_order_id },
+                { &address.sighash },
+                { my_sighash }
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &repayment_order.deal)?;
         let mut deal_order = protos::DealOrder::try_parse(&state_data)?;
         if !deal_order.lock.is_empty() {
-            bail_transaction!("The deal has been already locked");
+            bail_transaction!(
+                "The deal has been already locked",
+                context = "The deal order {:?} on repayment order {} is already locked by {:?}",
+                { repayment_order.deal },
+                { self.repayment_order_id },
+                { deal_order.lock }
+            );
         }
 
         repayment_order.previous_owner = (*my_sighash).clone();
@@ -1273,20 +1505,51 @@ impl CCTransaction for CloseRepaymentOrder {
         let state_data = get_state_data(tx_ctx, &self.repayment_order_id)?;
         let mut repayment_order = protos::RepaymentOrder::try_parse(&state_data)?;
         if repayment_order.sighash != my_sighash.as_str() {
-            bail_transaction!("Only a collector can close a repayment order");
+            bail_transaction!(
+                "Only a collector can close a repayment order",
+                context = "The sighash on the repayment order {} is {}, not the submitter {:?}",
+                { self.repayment_order_id },
+                { repayment_order.sighash },
+                my_sighash
+            );
         }
 
         let state_data = get_state_data(tx_ctx, &self.transfer_id)?;
         let mut transfer = protos::Transfer::try_parse(&state_data)?;
 
-        if transfer.order != self.repayment_order_id || transfer.amount != repayment_order.amount {
-            bail_transaction!("The transfer doesn't match the order");
+        if transfer.order != self.repayment_order_id {
+            bail_transaction!(
+                "The transfer doesn't match the order",
+                context = "The repayment order on the transfer {} is {}, not the expected order {}",
+                { self.transfer_id },
+                { transfer.order },
+                { self.repayment_order_id }
+            );
+        } else if transfer.amount != repayment_order.amount {
+            bail_transaction!(
+                "The transfer doesn't match the order",
+                context =
+                    "The amount on the transfer {} is {}, but the repayment order amount is {}",
+                { self.transfer_id },
+                { transfer.amount },
+                { repayment_order.amount }
+            );
         }
         if transfer.sighash != my_sighash.as_str() {
-            bail_transaction!("The transfer doesn't match the signer");
+            bail_transaction!(
+                "The transfer doesn't match the signer",
+                context = "The sighash on the transfer {} is {}, not the submitter sighash {:?}",
+                { self.transfer_id },
+                { transfer.sighash },
+                my_sighash
+            );
         }
         if transfer.processed {
-            bail_transaction!("The transfer has been already processed");
+            bail_transaction!(
+                "The transfer has been already processed",
+                context = "The transfer with ID {} is already marked complete",
+                { self.transfer_id }
+            );
         }
         transfer.processed = true;
 
@@ -1297,7 +1560,13 @@ impl CCTransaction for CloseRepaymentOrder {
         let src_address = protos::Address::try_parse(&state_data)?;
 
         if deal_order.lock != src_address.sighash {
-            bail_transaction!("The deal must be locked");
+            bail_transaction!(
+                "The deal must be locked",
+                context = "The lock on the deal order {} is {:?}, but it must match the source address sighash {:?}",
+                { repayment_order.deal },
+                { deal_order.lock },
+                { src_address.sighash }
+            );
         }
 
         deal_order.src_address = repayment_order.src_address.clone();
@@ -1327,7 +1596,11 @@ impl CCTransaction for CollectCoins {
         let state_data = try_get_state_data(tx_ctx, &id)?;
 
         if state_data.is_some() {
-            bail_transaction!("Already collected");
+            bail_transaction!(
+                "Already collected",
+                context = "There is existing state data at address {:?}, indicating the coins have been collected already",
+                id
+            );
         }
 
         let my_sighash = ctx.sighash(request)?;
