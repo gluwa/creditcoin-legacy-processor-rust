@@ -23,11 +23,11 @@ use crate::handler::constants::*;
 use crate::handler::settings::Settings;
 use crate::handler::types::{CCApplyError, SigHash};
 use crate::handler::types::{Guid, WalletId};
-use crate::handler::utils;
+use crate::handler::utils::{self, calc_interest};
 use crate::{protos, string};
 
 use super::context::mocked::MockHandlerContext;
-use super::types::Address;
+use super::types::{Address, TxnResult};
 use super::AddAskOrder;
 use super::AddBidOrder;
 use super::AddDealOrder;
@@ -54,7 +54,7 @@ static INIT_LOGS: Once = Once::new();
 fn init_logs() {
     INIT_LOGS.call_once(|| {
         // UNCOMMENT TO COLLECT LOGS
-        // crate::setup_logs(3).unwrap();
+        crate::setup_logs(3).unwrap();
     })
 }
 
@@ -1815,6 +1815,321 @@ fn add_deal_order_success() {
 
     execute_success(command, &request, &tx_ctx, &mut ctx);
 }
+
+fn expect_get_state_entry(
+    tx_ctx: &mut MockTransactionContext,
+    id: impl Into<String>,
+    ret: Option<impl Message + Default>,
+    times: Option<usize>,
+) {
+    let id = id.into();
+    let ret = ret.map(|m| m.to_bytes());
+    tx_ctx
+        .expect_get_state_entry()
+        .times(times.unwrap_or(1))
+        .withf(move |m| m == &id)
+        .return_once({
+            let ret = ret.clone();
+            |_| Ok(ret)
+        });
+}
+
+// --- CompleteDealOrder ---
+
+#[test]
+fn complete_deal_order_success() {
+    let command = CompleteDealOrder {
+        deal_order_id: "dealorderid".into(),
+        transfer_id: "transferid".into(),
+    };
+
+    let request = TpProcessRequest {
+        tip: 5,
+        ..Default::default()
+    };
+
+    let mut tx_ctx = MockTransactionContext::default();
+    let mut ctx = MockHandlerContext::default();
+
+    let my_sighash = SigHash::from("mysighash");
+
+    expect!(ctx, sighash -> my_sighash);
+
+    // Construct the deal order
+    let deal_order = protos::DealOrder {
+        blockchain: "ethereum".into(),
+        src_address: "srcaddressid".into(),
+        dst_address: "dstaddressid".into(),
+        amount: 1.to_string(),
+        sighash: my_sighash.to_string(),
+        maturity: 1000.to_string(),
+        fee: 1.to_string(),
+        expiration: 10000,
+        block: 2.to_string(),
+        ..Default::default()
+    };
+
+    expect_get_state_entry(
+        &mut tx_ctx,
+        &command.deal_order_id,
+        Some(deal_order.clone()),
+        Some(1),
+    );
+
+    let src_address = protos::Address {
+        blockchain: deal_order.blockchain.clone(),
+        value: "someaddressvalue".into(),
+        network: "rinkeby".into(),
+        sighash: my_sighash.to_string(),
+    };
+
+    expect_get_state_entry(
+        &mut tx_ctx,
+        &deal_order.src_address,
+        Some(src_address.clone()),
+        Some(1),
+    );
+
+    let transfer = protos::Transfer {
+        blockchain: deal_order.blockchain.clone(),
+        src_address: deal_order.src_address.clone(),
+        dst_address: deal_order.dst_address.clone(),
+        order: command.deal_order_id.clone(),
+        amount: deal_order.amount.clone(),
+        tx: "sometx".into(),
+        block: (request.tip - 1).to_string(),
+        processed: false,
+        sighash: my_sighash.to_string(),
+    };
+
+    expect_get_state_entry(
+        &mut tx_ctx,
+        command.transfer_id.clone(),
+        Some(transfer.clone()),
+        Some(1),
+    );
+
+    let wallet_id = WalletId::from(&my_sighash);
+    let fee = &*TX_FEE - Integer::try_parse(&deal_order.fee).unwrap();
+    expect!(tx_ctx, get balance at wallet_id -> Some(fee));
+
+    let updated_transfer = protos::Transfer {
+        processed: true,
+        ..transfer
+    };
+
+    let updated_deal_order = protos::DealOrder {
+        loan_transfer: command.transfer_id.clone(),
+        block: (request.tip - 1).to_string(),
+        ..deal_order.clone()
+    };
+
+    let guid = Guid::from("txnguid");
+    expect!(ctx, guid -> guid);
+
+    expect_set_state_entries(
+        &mut tx_ctx,
+        vec![
+            (wallet_id.to_string(), wallet_with(Some(0)).unwrap()),
+            make_fee(&guid, &my_sighash, Some(request.tip - 1)),
+            (command.transfer_id.clone(), updated_transfer.to_bytes()),
+            (command.deal_order_id.clone(), updated_deal_order.to_bytes()),
+        ],
+    );
+
+    execute_success(command, &request, &tx_ctx, &mut ctx);
+}
+
+// --- LockDealOrder ---
+
+#[test]
+fn lock_deal_order_success() {
+    init_logs();
+
+    let command = LockDealOrder {
+        deal_order_id: "dealorderid".into(),
+    };
+
+    let request = TpProcessRequest {
+        tip: 6,
+        ..Default::default()
+    };
+
+    let mut tx_ctx = MockTransactionContext::default();
+    let mut ctx = MockHandlerContext::default();
+
+    let my_sighash = SigHash::from("mysighash");
+
+    expect!(ctx, sighash -> my_sighash);
+
+    // Construct the deal order
+    let deal_order = protos::DealOrder {
+        blockchain: "ethereum".into(),
+        src_address: "srcaddressid".into(),
+        dst_address: "dstaddressid".into(),
+        amount: 1.to_string(),
+        sighash: my_sighash.to_string(),
+        maturity: 1000.to_string(),
+        fee: 1.to_string(),
+        expiration: 10000,
+        block: 4.to_string(),
+        loan_transfer: "transferid".into(),
+        ..Default::default()
+    };
+
+    expect_get_state_entry(
+        &mut tx_ctx,
+        command.deal_order_id.clone(),
+        Some(deal_order.clone()),
+        Some(1),
+    );
+
+    let wallet_id = WalletId::from(&my_sighash);
+    let fee = TX_FEE.clone();
+    expect!(tx_ctx, get balance at wallet_id -> Some(fee));
+
+    let guid = Guid::from("txnguid");
+    expect!(ctx, guid -> guid);
+
+    let updated_deal_order = protos::DealOrder {
+        lock: my_sighash.to_string(),
+        ..deal_order
+    };
+
+    expect_set_state_entries(
+        &mut tx_ctx,
+        vec![
+            (wallet_id.to_string(), wallet_with(Some(0)).unwrap()),
+            make_fee(&guid, &my_sighash, Some(request.tip - 1)),
+            (command.deal_order_id.clone(), updated_deal_order.to_bytes()),
+        ],
+    );
+
+    execute_success(command, &request, &tx_ctx, &mut ctx);
+}
+
+// --- CloseDealOrder ---
+
+#[test]
+fn close_deal_order_success() {
+    init_logs();
+
+    let command = CloseDealOrder {
+        deal_order_id: "dealorderid".into(),
+        transfer_id: "repaytransferid".into(),
+    };
+
+    let request = TpProcessRequest {
+        tip: 7,
+        ..Default::default()
+    };
+
+    let mut tx_ctx = MockTransactionContext::default();
+    let mut ctx = MockHandlerContext::default();
+
+    let my_sighash = SigHash::from("mysighash");
+
+    expect!(ctx, sighash -> my_sighash);
+
+    // Construct the deal order
+    let deal_order = protos::DealOrder {
+        blockchain: "ethereum".into(),
+        src_address: "srcaddressid".into(),
+        dst_address: "dstaddressid".into(),
+        amount: 1.to_string(),
+        maturity: 1000.to_string(),
+        fee: 1.to_string(),
+        expiration: 10000,
+        block: 4.to_string(),
+        loan_transfer: "transferid".into(),
+        lock: my_sighash.to_string(),
+        sighash: my_sighash.to_string(),
+        interest: 0.to_string(),
+        ..Default::default()
+    };
+
+    expect_get_state_entry(
+        &mut tx_ctx,
+        command.deal_order_id.clone(),
+        Some(deal_order.clone()),
+        Some(1),
+    );
+
+    let loan_transfer = protos::Transfer {
+        blockchain: deal_order.blockchain.clone(),
+        src_address: deal_order.src_address.clone(),
+        dst_address: deal_order.dst_address.clone(),
+        order: command.deal_order_id.clone(),
+        amount: deal_order.amount.clone(),
+        tx: "sometx".into(),
+        block: (request.tip - 1).to_string(),
+        processed: false,
+        sighash: my_sighash.to_string(),
+    };
+
+    expect_get_state_entry(
+        &mut tx_ctx,
+        deal_order.loan_transfer.clone(),
+        Some(loan_transfer.clone()),
+        Some(1),
+    );
+
+    let repayment_transfer = protos::Transfer {
+        blockchain: deal_order.blockchain.clone(),
+        src_address: deal_order.src_address.clone(),
+        dst_address: deal_order.dst_address.clone(),
+        order: command.deal_order_id.clone(),
+        amount: deal_order.amount.clone(),
+        tx: "somerepaytx".into(),
+        block: (request.tip - 1).to_string(),
+        processed: false,
+        sighash: my_sighash.to_string(),
+    };
+
+    expect_get_state_entry(
+        &mut tx_ctx,
+        command.transfer_id.clone(),
+        Some(repayment_transfer.clone()),
+        Some(1),
+    );
+
+    let wallet_id = WalletId::from(&my_sighash);
+    let fee = TX_FEE.clone();
+    expect!(tx_ctx, get balance at wallet_id -> Some(fee));
+
+    let guid = Guid::from("txnguid");
+    expect!(ctx, guid -> guid);
+
+    let updated_deal_order = protos::DealOrder {
+        lock: my_sighash.to_string(),
+        repayment_transfer: command.transfer_id.clone(),
+        ..deal_order
+    };
+
+    let updated_repayment_transfer = protos::Transfer {
+        processed: true,
+        ..repayment_transfer
+    };
+    expect_set_state_entries(
+        &mut tx_ctx,
+        vec![
+            (wallet_id.to_string(), wallet_with(Some(0)).unwrap()),
+            make_fee(&guid, &my_sighash, Some(request.tip - 1)),
+            (command.deal_order_id.clone(), updated_deal_order.to_bytes()),
+            (
+                command.transfer_id.clone(),
+                updated_repayment_transfer.to_bytes(),
+            ),
+        ],
+    );
+
+    execute_success(command, &request, &tx_ctx, &mut ctx);
+}
+
+// --- Exempt ---
+
+#[test]
+fn exempt_success() {}
 
 // --- Housekeeping ---
 

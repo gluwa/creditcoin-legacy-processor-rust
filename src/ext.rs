@@ -2,6 +2,7 @@ use crate::handler::{
     constants::{INVALID_NUMBER_FORMAT_ERR, NEGATIVE_NUMBER_ERR},
     types::{CCApplyError, TxnResult},
 };
+use anyhow::Context;
 use rug::Integer;
 use sawtooth_sdk::processor::handler::ApplyError;
 
@@ -19,7 +20,8 @@ pub trait IntegerExt {
     fn try_parse_signed<S: AsRef<str>>(s: S) -> TxnResult<Integer> {
         Ok(Integer::parse(s.as_ref())
             .map(Integer::from)
-            .map_err(|_| CCApplyError::InvalidTransaction(INVALID_NUMBER_FORMAT_ERR.into()))?)
+            .map_err(|_| CCApplyError::InvalidTransaction(INVALID_NUMBER_FORMAT_ERR.into()))
+            .with_context(|| format!("The string {:?} is not a valid number", s.as_ref()))?)
     }
 }
 
