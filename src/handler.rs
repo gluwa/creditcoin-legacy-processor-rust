@@ -1378,10 +1378,10 @@ impl CCTransaction for AddRepaymentOrder {
         if src_address.sighash == my_sighash.as_str() {
             bail_transaction!(
                 "Investors cannot create repayment orders",
-                context = "The source address {:?} for the deal order {} is owned by {}, not the submitter {:?}",
+                context =
+                    "The source address {:?} for the deal order {:?} is owned by the submitter {:?}",
                 { &src_address },
                 { self.deal_order_id },
-                { &src_address.sighash },
                 my_sighash
             );
         }
@@ -1410,7 +1410,7 @@ impl CCTransaction for AddRepaymentOrder {
         } else if src_address.value == new_address.value {
             bail_transaction!(
                 "Invalid address",
-                context = "The vaue at address {:?} is {:?}, but the value at the new address {:?} is {:?}; they must match",
+                context = "The value at address {:?} is {:?}, but the value at the new address {:?} is {:?}; they must differ",
                 src_address,
                 { &src_address.value },
                 new_address,

@@ -153,6 +153,12 @@ impl AsRef<str> for Address {
     }
 }
 
+impl Into<String> for &Address {
+    fn into(self) -> String {
+        self.0.clone()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Default)]
 pub struct State(pub Vec<u8>);
 
