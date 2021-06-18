@@ -18,7 +18,7 @@ use rug::Integer;
 use sawtooth_sdk::messages::processor::TpProcessRequest;
 use sawtooth_sdk::processor::handler::TransactionContext;
 
-use crate::ext::MessageExt;
+use crate::ext::{IntegerExt, MessageExt};
 use crate::handler::constants::*;
 use crate::handler::settings::Settings;
 use crate::handler::types::{CCApplyError, SigHash};
@@ -1039,6 +1039,26 @@ fn expect_set_state_entries(tx_ctx: &mut MockTransactionContext, entries: Vec<(S
     }, returning |_| Ok(()));
 }
 
+fn expect_delete_state_entries(tx_ctx: &mut MockTransactionContext, entries: Vec<String>) {
+    tx_ctx
+        .expect_delete_state_entries()
+        .once()
+        .withf({
+            let entries = entries.into_iter().sorted().collect_vec();
+            move |e| {
+                let s = itertools::sorted(e.clone());
+                for (entry, other) in entries.iter().zip(s) {
+                    if entry != other {
+                        println!("Not equal! Expected {:?} -- Found {:?}", entry, other);
+                        return false;
+                    }
+                }
+                true
+            }
+        })
+        .returning(|_| Ok(Vec::new()));
+}
+
 // ----- COMMAND EXECUTION TESTS -----
 #[track_caller]
 fn execute_success(
@@ -1584,7 +1604,7 @@ fn add_offer_success() {
         sighash: my_sighash.to_string(),
     };
 
-    expect!(tx_ctx, get_state_entry where enclose! { (command.ask_order_id => id) move |a| 
+    expect!(tx_ctx, get_state_entry where enclose! { (command.ask_order_id => id) move |a|
         a == id
     }, returning enclose!((ask_order) move |_| Ok(Some(ask_order.to_bytes()))));
 
@@ -1602,7 +1622,7 @@ fn add_offer_success() {
         sighash: bid_sighash.to_string(),
     };
 
-    expect!(tx_ctx, get_state_entry where enclose! { (command.bid_order_id => id) move |a| 
+    expect!(tx_ctx, get_state_entry where enclose! { (command.bid_order_id => id) move |a|
         a == id
     }, returning enclose!((bid_order) move |_| Ok(Some(bid_order.to_bytes()))));
 
@@ -1612,19 +1632,18 @@ fn add_offer_success() {
         sighash: my_sighash.clone().into(),
         value: "somevalue".into(),
     };
-    
-    expect!(tx_ctx, get_state_entry where enclose! { (ask_order.address => id) move |a| 
+
+    expect!(tx_ctx, get_state_entry where enclose! { (ask_order.address => id) move |a|
         a == id
     }, returning enclose!((src_address_proto) move |_| Ok(Some(src_address_proto.to_bytes()))));
-    
-    
+
     let dest_address_proto = protos::Address {
         blockchain: "ethereum".into(),
         network: "rinkeby".into(),
         sighash: bid_sighash.clone().into(),
         value: "somevalue".into(),
     };
-    expect!(tx_ctx, get_state_entry where enclose! { (bid_order.address => id) move |a| 
+    expect!(tx_ctx, get_state_entry where enclose! { (bid_order.address => id) move |a|
         a == id
     }, returning enclose!((dest_address_proto) move |_| Ok(Some(dest_address_proto.to_bytes()))));
 
@@ -1643,6 +1662,154 @@ fn add_offer_success() {
             (offer_address.into(), offer.to_bytes()),
             (wallet_id.to_string(), wallet_with(Some(0)).unwrap()),
             make_fee(&guid, &my_sighash, None),
+        ],
+    );
+
+    execute_success(command, &request, &tx_ctx, &mut ctx);
+}
+
+// --- AddDealOrder ---
+
+#[test]
+fn add_deal_order_success() {
+    init_logs();
+
+    let command = AddDealOrder {
+        offer_id: "someofferid".into(),
+        expiration: 10000,
+    };
+
+    let request = TpProcessRequest {
+        tip: 5,
+        ..Default::default()
+    };
+
+    let mut tx_ctx = MockTransactionContext::default();
+    let mut ctx = MockHandlerContext::default();
+
+    let address_id = Address::with_prefix_key(DEAL_ORDER, &command.offer_id);
+
+    // Check for existing deal order
+    expect!(tx_ctx, get_state_entry where enclose! {(address_id) move |a| a == address_id.as_str()}, returning |_| Ok(None));
+
+    let my_sighash = SigHash::from("mysighash");
+
+    // Get the sighash of the transaction submitter
+    expect!(ctx, sighash -> my_sighash);
+
+    let offer = protos::Offer {
+        blockchain: "ethereum".into(),
+        ask_order: "askorderid".into(),
+        bid_order: "bidorderid".into(),
+        expiration: 10000,
+        block: 4.to_string(),
+        sighash: my_sighash.to_string(),
+    };
+
+    // Get the offer specified in the transaction
+    expect!(
+        tx_ctx,
+        get_state_entry
+            where enclose! { (command.offer_id => offer_id) move |a|
+                a == offer_id
+            },
+        returning enclose! { (offer) move |_|
+            Ok(Some(offer.to_bytes()))
+        }
+    );
+
+    let bid_order = protos::BidOrder {
+        blockchain: offer.blockchain.clone(),
+        address: "bidorderaddress".into(),
+        amount: 1.to_string(),
+        interest: 100.to_string(),
+        maturity: 1000.to_string(),
+        fee: 1.to_string(),
+        expiration: 10000,
+        block: 2.to_string(),
+        sighash: my_sighash.to_string(),
+    };
+
+    // Get the bid order specified in the offer
+    expect!(
+        tx_ctx,
+        get_state_entry
+            where enclose! { (offer.bid_order => id) move|a|
+                a == id
+            },
+        returning enclose! { (bid_order) move |_|
+            Ok(Some(bid_order.to_bytes()))
+        }
+    );
+
+    let other_sighash = SigHash::from("othersighash");
+
+    let ask_order = protos::AskOrder {
+        blockchain: offer.blockchain.clone(),
+        address: "askorderaddress".into(),
+        amount: 2.to_string(),
+        interest: 100.to_string(),
+        maturity: 1000.to_string(),
+        fee: 1.to_string(),
+        expiration: 10000,
+        block: 1.to_string(),
+        sighash: other_sighash.to_string(),
+    };
+
+    // Get the ask order specified in the offer
+    expect!(
+        tx_ctx,
+        get_state_entry
+            where enclose! { (offer.ask_order => id) move |a|
+                a == id
+            },
+        returning enclose! { (ask_order) move|_|
+            Ok(Some(ask_order.to_bytes()))
+        }
+    );
+
+    // Make sure the fundraiser has enough wallet balance to cover the bid order fee + standard txn fee
+    let wallet_id = WalletId::from(&my_sighash);
+    let balance = Integer::try_parse(&bid_order.fee).unwrap() + &*TX_FEE;
+    expect!(tx_ctx, get balance at wallet_id -> Some(balance));
+
+    // Construct the deal order
+    let deal_order = protos::DealOrder {
+        blockchain: offer.blockchain,
+        src_address: ask_order.address,
+        dst_address: bid_order.address,
+        amount: bid_order.amount,
+        interest: bid_order.interest,
+        maturity: bid_order.maturity,
+        fee: bid_order.fee,
+        expiration: command.expiration,
+        sighash: my_sighash.to_string(),
+        block: (request.tip - 1).to_string(),
+        ..Default::default()
+    };
+
+    let guid = Guid::from("txnguid");
+    expect!(ctx, guid -> guid);
+
+    // Set new states
+    expect_set_state_entries(
+        &mut tx_ctx,
+        vec![
+            // update fundraiser wallet to balance - fee
+            (wallet_id.to_string(), wallet_with(Some(0)).unwrap()),
+            // register a new fee, for return later
+            make_fee(&guid, &my_sighash, Some(request.tip - 1)),
+            // add the new deal order to state
+            (address_id.to_string(), deal_order.to_bytes()),
+        ],
+    );
+
+    expect_delete_state_entries(
+        &mut tx_ctx,
+        vec![
+            offer.ask_order.clone(),
+            offer.bid_order.clone(),
+            command.offer_id.clone(),
         ],
     );
 
