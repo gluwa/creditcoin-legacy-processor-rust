@@ -70,7 +70,7 @@ fn setup_logs(verbose_count: u64) -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(test))]
+#[cfg(not(all(test, feature = "mock")))]
 fn main() -> Result<()> {
     let matches = clap_app!(consensus_engine =>
       (version: crate_version!())

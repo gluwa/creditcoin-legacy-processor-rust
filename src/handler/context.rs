@@ -133,7 +133,7 @@ impl HandlerContext {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "mock"))]
 pub mod mocked {
     use super::*;
     mockall::mock! {

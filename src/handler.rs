@@ -16,10 +16,10 @@ use crate::{
 };
 
 use anyhow::Context;
-#[cfg(not(test))]
+#[cfg(not(all(test, feature = "mock")))]
 use context::HandlerContext;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "mock"))]
 use context::mocked::MockHandlerContext as HandlerContext;
 
 use constants::*;
