@@ -182,14 +182,14 @@ impl TryFrom<Value> for CCCommand {
         if let Value::Map(map) = value {
             let verb = get_string(&map, "v", "verb")?;
             debug!("verb = {}", verb);
-            Ok(match verb.as_str() {
-                "SendFunds" => {
+            Ok(match verb.to_uppercase().as_str() {
+                "SENDFUNDS" => {
                     let amount = get_integer(&map, "p1", "amount")?;
                     let sighash = SigHash(get_string(&map, "p2", "sighash")?.clone());
                     SendFunds { amount, sighash }.into()
                 }
 
-                "RegisterAddress" => {
+                "REGISTERADDRESS" => {
                     let blockchain = get_string(&map, "p1", "blockchain")?.to_lowercase();
                     let address = get_string(&map, "p2", "address")?.clone();
                     let network = get_string(&map, "p3", "network")?.to_lowercase();
@@ -201,7 +201,7 @@ impl TryFrom<Value> for CCCommand {
                     .into()
                 }
 
-                "RegisterTransfer" => {
+                "REGISTERTRANSFER" => {
                     let gain = get_signed_integer(&map, "p1", "gain")?;
                     let order_id = get_string(&map, "p2", "orderID")?.to_lowercase();
                     let blockchain_tx_id = get_string(&map, "p3", "blockchainTxId")?.to_lowercase();
@@ -213,7 +213,7 @@ impl TryFrom<Value> for CCCommand {
                     .into()
                 }
 
-                "AddAskOrder" => {
+                "ADDASKORDER" => {
                     let address_id = get_string(&map, "p1", "addressId")?.to_lowercase();
                     let amount_str = get_integer_string(&map, "p2", "amount")?.clone();
                     let interest = get_integer_string(&map, "p3", "interest")?.clone();
@@ -231,7 +231,7 @@ impl TryFrom<Value> for CCCommand {
                     .into()
                 }
 
-                "AddBidOrder" => {
+                "ADDBIDORDER" => {
                     let address_id = get_string(&map, "p1", "addressId")?.to_lowercase();
                     let amount_str = get_integer_string(&map, "p2", "amount")?.clone();
                     let interest = get_integer_string(&map, "p3", "interest")?.clone();
@@ -249,7 +249,7 @@ impl TryFrom<Value> for CCCommand {
                     .into()
                 }
 
-                "AddOffer" => {
+                "ADDOFFER" => {
                     let ask_order_id = get_string(&map, "p1", "askOrderId")?.to_lowercase();
                     let bid_order_id = get_string(&map, "p2", "bidOrderId")?.to_lowercase();
                     let expiration = get_u64(&map, "p3", "expiration")?;
@@ -262,7 +262,7 @@ impl TryFrom<Value> for CCCommand {
                     .into()
                 }
 
-                "AddDealOrder" => {
+                "ADDDEALORDER" => {
                     let offer_id = get_string(&map, "p1", "offerId")?.to_lowercase();
                     let expiration = get_u64(&map, "p2", "expiration")?;
 
@@ -273,7 +273,7 @@ impl TryFrom<Value> for CCCommand {
                     .into()
                 }
 
-                "CompleteDealOrder" => {
+                "COMPLETEDEALORDER" => {
                     let deal_order_id = get_string(&map, "p1", "dealOrderId")?.to_lowercase();
                     let transfer_id = get_string(&map, "p2", "transferId")?.to_lowercase();
 
@@ -284,12 +284,12 @@ impl TryFrom<Value> for CCCommand {
                     .into()
                 }
 
-                "LockDealOrder" => LockDealOrder {
+                "LOCKDEALORDER" => LockDealOrder {
                     deal_order_id: get_string(&map, "p1", "dealOrderId")?.to_lowercase(),
                 }
                 .into(),
 
-                "CloseDealOrder" => {
+                "CLOSEDEALORDER" => {
                     let deal_order_id = get_string(&map, "p1", "dealOrderId")?.to_lowercase();
                     let transfer_id = get_string(&map, "p2", "transferId")?.to_lowercase();
 
@@ -300,7 +300,7 @@ impl TryFrom<Value> for CCCommand {
                     .into()
                 }
 
-                "Exempt" => {
+                "EXEMPT" => {
                     let deal_order_id = get_string(&map, "p1", "dealOrderId")?.to_lowercase();
                     let transfer_id = get_string(&map, "p2", "transferId")?.to_lowercase();
 
@@ -311,7 +311,7 @@ impl TryFrom<Value> for CCCommand {
                     .into()
                 }
 
-                "AddRepaymentOrder" => {
+                "ADDREPAYMENTORDER" => {
                     let deal_order_id = get_string(&map, "p1", "dealOrderId")?.to_lowercase();
                     let address_id = get_string(&map, "p2", "addressId")?.to_lowercase();
                     let amount = get_integer_string(&map, "p3", "amount")?.clone();
@@ -326,25 +326,25 @@ impl TryFrom<Value> for CCCommand {
                     .into()
                 }
 
-                "CompleteRepaymentOrder" => CompleteRepaymentOrder {
+                "COMPLETEREPAYMENTORDER" => CompleteRepaymentOrder {
                     repayment_order_id: get_string(&map, "p1", "repaymentOrderId")?.to_lowercase(),
                 }
                 .into(),
 
-                "CloseRepaymentOrder" => CloseRepaymentOrder {
+                "CLOSEREPAYMENTORDER" => CloseRepaymentOrder {
                     repayment_order_id: get_string(&map, "p1", "repaymentOrderId")?.to_lowercase(),
                     transfer_id: get_string(&map, "p2", "transferId")?.to_lowercase(),
                 }
                 .into(),
 
-                "CollectCoins" => CollectCoins {
+                "COLLECTCOINS" => CollectCoins {
                     eth_address: get_string(&map, "p1", "ethAddress")?.to_lowercase(),
                     amount: get_integer(&map, "p2", "amount")?,
                     blockchain_tx_id: get_string(&map, "p3", "blockchainTxId")?.to_lowercase(),
                 }
                 .into(),
 
-                "Housekeeping" => Housekeeping {
+                "HOUSEKEEPING" => Housekeeping {
                     block_idx: get_integer(&map, "p1", "blockIdx")?,
                 }
                 .into(),

@@ -3,20 +3,20 @@
 
 mod mocked;
 
-use mocked::{MockSettings, MockTransactionContext};
 use crate::sdk::processor::handler::ApplyError;
+use mocked::{MockSettings, MockTransactionContext};
 use serde_cbor::Value;
 
 use std::collections::BTreeMap;
 use std::sync::Once;
 
+use crate::sdk::messages::processor::TpProcessRequest;
+use crate::sdk::processor::handler::TransactionContext;
 use enclose::enclose;
 use itertools::Itertools;
 use mockall::predicate;
 use prost::Message;
 use rug::Integer;
-use crate::sdk::messages::processor::TpProcessRequest;
-use crate::sdk::processor::handler::TransactionContext;
 
 use crate::ext::{IntegerExt, MessageExt};
 use crate::handler::constants::*;
@@ -269,6 +269,17 @@ fn send_funds_accept() {
 }
 
 #[test]
+fn send_funds_case_insensitive() {
+    deserialize_success(
+        TwoArgCommand::new("SeNdfUnDs", 1, "foo"),
+        SendFunds {
+            amount: 1.into(),
+            sighash: SigHash("foo".into()),
+        },
+    )
+}
+
+#[test]
 fn send_funds_rejects_negative() {
     deserialize_failure(
         TwoArgCommand::new("SendFunds", -1, "foo"),
@@ -305,6 +316,18 @@ fn register_address_accept() {
 }
 
 #[test]
+fn register_address_case_insensitive() {
+    deserialize_success(
+        ThreeArgCommand::new("ReGiStErAdDrEsS", "blockchain", "address", "network"),
+        RegisterAddress {
+            blockchain: "blockchain".into(),
+            address: "address".into(),
+            network: "network".into(),
+        },
+    )
+}
+
+#[test]
 fn register_address_missing_arg() {
     deserialize_failure(
         TwoArgCommand::new("RegisterAddress", "blockchain", "address"),
@@ -326,6 +349,18 @@ fn register_address_missing_arg() {
 fn register_transfer_accept() {
     deserialize_success(
         ThreeArgCommand::new("RegisterTransfer", 1, "orderid", "txid"),
+        RegisterTransfer {
+            gain: 1.into(),
+            order_id: "orderid".into(),
+            blockchain_tx_id: "txid".into(),
+        },
+    );
+}
+
+#[test]
+fn register_transfer_case_insensitive() {
+    deserialize_success(
+        ThreeArgCommand::new("ReGiStErTrAnSfEr", 1, "orderid", "txid"),
         RegisterTransfer {
             gain: 1.into(),
             order_id: "orderid".into(),
@@ -386,6 +421,20 @@ fn add_ask_order_accept() {
     };
     deserialize_success(args, expected.clone());
     deserialize_success(args_uppercase, expected.clone());
+}
+
+#[test]
+fn add_ask_order_case_insensitive() {
+    let args = SixArgCommand::new("AdDAsKoRdEr", "addressid", 1, 2, 3, 4, 5);
+    let expected = AddAskOrder {
+        address_id: "addressid".into(),
+        amount_str: 1.to_string(),
+        interest: 2.to_string(),
+        maturity: 3.to_string(),
+        fee: 4.to_string(),
+        expiration: 5,
+    };
+    deserialize_success(args, expected);
 }
 
 #[test]
@@ -515,6 +564,20 @@ fn add_bid_order_accept() {
 }
 
 #[test]
+fn add_bid_order_case_insensitive() {
+    let args = SixArgCommand::new("AdDbIdOrDeR", "addressid", 1, 2, 3, 4, 5);
+    let expected = AddBidOrder {
+        address_id: "addressid".into(),
+        amount_str: 1.to_string(),
+        interest: 2.to_string(),
+        maturity: 3.to_string(),
+        fee: 4.to_string(),
+        expiration: 5,
+    };
+    deserialize_success(args, expected);
+}
+
+#[test]
 fn add_bid_order_negative_amount() {
     deserialize_failure(
         SixArgCommand::new("AddBidOrder", "addressid", -1, 2, 3, 4, 5),
@@ -639,6 +702,17 @@ fn add_offer_accept() {
 }
 
 #[test]
+fn add_offer_case_insensitive() {
+    let args = ThreeArgCommand::new("AdDoFfEr", "askorder", "bidorder", 1);
+    let expected = AddOffer {
+        ask_order_id: "askorder".into(),
+        bid_order_id: "bidorder".into(),
+        expiration: 1,
+    };
+    deserialize_success(args, expected);
+}
+
+#[test]
 fn add_offer_negative_expiration() {
     deserialize_failure(
         ThreeArgCommand::new("AddOffer", "ask", "bid", -2),
@@ -680,6 +754,15 @@ fn add_deal_order_accept() {
         expected.clone(),
     );
     deserialize_success(TwoArgCommand::new("AddDealOrder", "OFFERID", 1), expected);
+}
+
+#[test]
+fn add_deal_order_case_insensitive() {
+    let expected = AddDealOrder {
+        offer_id: "offerid".into(),
+        expiration: 1,
+    };
+    deserialize_success(TwoArgCommand::new("AdDdEaLoRdEr", "offerid", 1), expected);
 }
 
 #[test]
@@ -726,6 +809,18 @@ fn complete_deal_order_accept() {
 }
 
 #[test]
+fn complete_deal_order_case_insensitive() {
+    let expected = CompleteDealOrder {
+        deal_order_id: "orderid".into(),
+        transfer_id: "transferid".into(),
+    };
+    deserialize_success(
+        TwoArgCommand::new("CoMpLeTeDeAlOrDer", "orderid", "transferid"),
+        expected,
+    );
+}
+
+#[test]
 fn complete_deal_order_missing_arg() {
     deserialize_failure(
         OneArgCommand::new("CompleteDealOrder", "orderid"),
@@ -752,6 +847,14 @@ fn lock_deal_order_accept() {
 }
 
 #[test]
+fn lock_deal_order_case_insensitive() {
+    let expected = LockDealOrder {
+        deal_order_id: "orderid".into(),
+    };
+    deserialize_success(OneArgCommand::new("LoCkDeAlOrDeR", "orderid"), expected);
+}
+
+#[test]
 fn lock_deal_order_missing_arg() {
     deserialize_failure(
         ZeroArgCommand::new("LockDealOrder"),
@@ -773,6 +876,18 @@ fn close_deal_order_accept() {
     );
     deserialize_success(
         TwoArgCommand::new("CloseDealOrder", "ORDERID", "TRANSFERID"),
+        expected,
+    );
+}
+
+#[test]
+fn close_deal_order_case_insensitive() {
+    let expected = CloseDealOrder {
+        deal_order_id: "orderid".into(),
+        transfer_id: "transferid".into(),
+    };
+    deserialize_success(
+        TwoArgCommand::new("ClOsEdEaLoRdEr", "orderid", "transferid"),
         expected,
     );
 }
@@ -808,6 +923,18 @@ fn exempt_accept() {
 }
 
 #[test]
+fn exempt_case_insensitive() {
+    let expected = Exempt {
+        deal_order_id: "orderid".into(),
+        transfer_id: "transferid".into(),
+    };
+    deserialize_success(
+        TwoArgCommand::new("ExEmPt", "orderid", "transferid"),
+        expected,
+    );
+}
+
+#[test]
 fn exempt_missing_arg() {
     deserialize_failure(
         OneArgCommand::new("Exempt", "orderid"),
@@ -833,6 +960,20 @@ fn add_repayment_order_accept() {
     deserialize_success(
         FourArgCommand::new("AddRepaymentOrder", "ORDERID", "ADDRESSID", 1, 2),
         expected.clone(),
+    );
+}
+
+#[test]
+fn add_repayment_order_case_insensitive() {
+    let expected = AddRepaymentOrder {
+        deal_order_id: "orderid".into(),
+        address_id: "addressid".into(),
+        amount: "1".into(),
+        expiration: 2,
+    };
+    deserialize_success(
+        FourArgCommand::new("AdDrEpAyMeNtOrDeR", "orderid", "addressid", 1, 2),
+        expected,
     );
 }
 
@@ -898,6 +1039,17 @@ fn complete_repayment_order_accept() {
 }
 
 #[test]
+fn complete_repayment_order_case_insensitive() {
+    let expected = CompleteRepaymentOrder {
+        repayment_order_id: "repaymentid".into(),
+    };
+    deserialize_success(
+        OneArgCommand::new("CoMpLeTeRePaYmEnToRdEr", "repaymentid"),
+        expected,
+    );
+}
+
+#[test]
 fn complete_repayment_order_missing_arg() {
     deserialize_failure(
         ZeroArgCommand::new("CompleteRepaymentOrder"),
@@ -920,6 +1072,18 @@ fn close_repayment_order_accept() {
     deserialize_success(
         TwoArgCommand::new("CloseRepaymentOrder", "REPAYMENTID", "TRANSFERID"),
         expected.clone(),
+    );
+}
+
+#[test]
+fn close_repayment_order_case_insensitive() {
+    let expected = CloseRepaymentOrder {
+        repayment_order_id: "repaymentid".into(),
+        transfer_id: "transferid".into(),
+    };
+    deserialize_success(
+        TwoArgCommand::new("ClOsErEpAyMeNtOrDeR", "repaymentid", "transferid"),
+        expected,
     );
 }
 
@@ -952,6 +1116,20 @@ fn collect_coins_accept() {
     deserialize_success(
         ThreeArgCommand::new("CollectCoins", "ETHADDRESS", 1, "BLOCKCHAINID"),
         expected.clone(),
+    );
+}
+
+#[test]
+fn collect_coins_case_insensitive() {
+    let expected = CollectCoins {
+        eth_address: "ethaddress".into(),
+        amount: 1.into(),
+        blockchain_tx_id: "blockchainid".into(),
+    };
+
+    deserialize_success(
+        ThreeArgCommand::new("CoLlEcTcOiNs", "ethaddress", 1, "blockchainid"),
+        expected,
     );
 }
 
@@ -990,6 +1168,16 @@ fn collect_coins_missing_arg() {
 fn housekeeping_accept() {
     deserialize_success(
         OneArgCommand::new("Housekeeping", 1),
+        CCCommand::Housekeeping(Housekeeping {
+            block_idx: 1.into(),
+        }),
+    )
+}
+
+#[test]
+fn housekeeping_case_insensitive() {
+    deserialize_success(
+        OneArgCommand::new("HoUsEkEePiNg", 1),
         CCCommand::Housekeeping(Housekeeping {
             block_idx: 1.into(),
         }),
