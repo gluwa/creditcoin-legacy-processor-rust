@@ -25,7 +25,7 @@ use context::mocked::MockHandlerContext as HandlerContext;
 use constants::*;
 use log::{debug, info};
 use rug::{Assign, Integer};
-use sawtooth_sdk::{
+use crate::sdk::{
     messages::processor::TpProcessRequest,
     processor::{
         handler::{ApplyError, TransactionContext, TransactionHandler},

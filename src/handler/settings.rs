@@ -7,7 +7,7 @@ use std::{
 
 use dashmap::DashMap;
 use log::{info, trace, warn};
-use sawtooth_sdk::{messaging::stream::ReceiveError, processor::EmptyTransactionContext};
+use crate::sdk::{messaging::stream::ReceiveError, processor::EmptyTransactionContext};
 
 use crate::handler::{constants::SETTINGS_NAMESPACE, filter, types::CCApplyError};
 
@@ -69,7 +69,7 @@ impl SettingsUpdater {
     fn update_settings(tx_ctx: &EmptyTransactionContext, settings: &Settings) -> TxnResult<()> {
         tx_ctx.flush();
         trace!("updating settings");
-        use sawtooth_sdk::messages::Message;
+        use crate::sdk::messages::Message;
         filter(tx_ctx, SETTINGS_NAMESPACE, |_, proto| {
             let setting = sawtooth_sdk::messages::setting::Setting::parse_from_bytes(&proto)
                 .map_err(|e| {

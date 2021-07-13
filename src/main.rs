@@ -26,7 +26,12 @@ use clap::{clap_app, crate_authors, crate_description, crate_version};
 use fern::colors::ColoredLevelConfig;
 use log::info;
 
-use sawtooth_sdk::processor::TransactionProcessor;
+#[cfg(feature = "old-sawtooth")]
+pub use sawtooth_sdk_compat as sdk;
+#[cfg(not(feature = "old-sawtooth"))]
+pub use sawtooth_sdk as sdk;
+
+use crate::sdk::processor::TransactionProcessor;
 
 const DEFAULT_ENDPOINT: &str = "tcp://localhost:4004";
 const DEFAULT_GATEWAY: &str = "tcp://localhost:55555";
@@ -78,6 +83,7 @@ fn main() -> Result<()> {
       (about: crate_description!())
       (@arg endpoint: -E --endpoint +takes_value "connection endpoint for validator")
       (@arg gateway: -G --gateway +takes_value "connection endpoint for gateway")
+      (@arg old: --old "use compatibility")
       (@arg verbose: -v --verbose +multiple "increase output verbosity")
     )
     .get_matches();

@@ -1,6 +1,6 @@
 use std::mem;
 
-use sawtooth_sdk::messages::processor::TpProcessRequest;
+use crate::sdk::messages::processor::TpProcessRequest;
 
 use super::{
     settings::Settings,

@@ -108,7 +108,8 @@ dependencies = [
  "prost-build",
  "rand 0.8.3",
  "rug",
- "sawtooth-sdk-creditcoin",
+ "sawtooth-sdk-creditcoin 0.5.1 (git+https://github.com/nathanwhit/sawtooth-sdk-rust?branch=sawtooth1.0.5)",
+ "sawtooth-sdk-creditcoin 0.5.1 (git+https://github.com/nathanwhit/sawtooth-sdk-rust)",
  "serde",
  "serde_cbor",
  "serde_json",
@@ -937,6 +938,26 @@ name = "ryu"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
+
+[[package]]
+name = "sawtooth-sdk-creditcoin"
+version = "0.5.1"
+source = "git+https://github.com/nathanwhit/sawtooth-sdk-rust?branch=sawtooth1.0.5#06d781bd399d02d1ad1d38c0f8c4f64587c649c2"
+dependencies = [
+ "ctrlc",
+ "glob 0.2.11",
+ "hex",
+ "libc",
+ "log 0.3.9",
+ "openssl",
+ "protobuf",
+ "protoc-rust",
+ "rand 0.4.6",
+ "rust-crypto",
+ "secp256k1",
+ "uuid",
+ "zmq",
+]
 
 [[package]]
 name = "sawtooth-sdk-creditcoin"

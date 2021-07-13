@@ -4,7 +4,7 @@ use crate::handler::{
 };
 use anyhow::Context;
 use rug::Integer;
-use sawtooth_sdk::processor::handler::ApplyError;
+use crate::sdk::processor::handler::ApplyError;
 
 pub trait IntegerExt {
     fn try_parse<S: AsRef<str>>(s: S) -> TxnResult<Integer> {

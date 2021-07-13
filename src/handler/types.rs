@@ -3,8 +3,8 @@ use std::ops::Deref;
 
 use derive_more::{From, Into};
 use rug::Integer;
-use sawtooth_sdk::processor::handler::ApplyError;
-use sawtooth_sdk::processor::handler::ContextError;
+use crate::sdk::processor::handler::ApplyError;
+use crate::sdk::processor::handler::ContextError;
 
 use crate::handler::constants::*;
 use crate::handler::utils::sha512_id;
