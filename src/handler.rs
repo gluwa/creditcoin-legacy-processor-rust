@@ -1976,7 +1976,7 @@ pub struct CCTransactionHandler {
 }
 
 impl CCTransactionHandler {
-    pub fn new<S: Into<String>>(processor: &TransactionProcessor, gateway: S) -> Self {
+    pub fn new<S: Into<String>>(processor: &mut TransactionProcessor, gateway: S) -> Self {
         let gateway_endpoint: String = gateway.into();
         let context = zmq::Context::new();
         let settings = Settings::new();
