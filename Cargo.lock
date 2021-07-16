@@ -27,16 +27,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "595d3cfa7a60d4555cb5067b99f07142a08ea778de5cf993f7b75c7d8fabc486"
 
 [[package]]
-name = "arrayvec"
-version = "0.3.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06f59fe10306bb78facd90d28c2038ad23ffaaefa85bac43c8a434cde383334f"
-dependencies = [
- "nodrop",
- "odds",
-]
-
-[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -98,9 +88,9 @@ dependencies = [
  "enclose",
  "enum_dispatch",
  "fern",
- "glob 0.3.0",
+ "glob",
  "itertools 0.10.1",
- "log 0.4.14",
+ "log",
  "mockall",
  "once_cell",
  "paste",
@@ -277,7 +267,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c9a4820f0ccc8a7afd67c39a0f1a0f4b07ca1725164271a64939d7aeb9af065"
 dependencies = [
  "colored",
- "log 0.4.14",
+ "log",
 ]
 
 [[package]]
@@ -351,12 +341,6 @@ dependencies = [
 
 [[package]]
 name = "glob"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8be18de09a56b60ed0edf84bc9df007e30040691af7acd1c41874faac5895bfb"
-
-[[package]]
-name = "glob"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b919933a397b79c37e33b77bb2aa3dc8eb6e165ad809e58ff75bc7db2e34574"
@@ -400,12 +384,6 @@ checksum = "62b467343b94ba476dcb2500d242dadbb39557df889310ac77c5d99100aaac33"
 dependencies = [
  "libc",
 ]
-
-[[package]]
-name = "hex"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "805026a5d0141ffc30abb3be3173848ad46a1b1664fe632428479619a3644d77"
 
 [[package]]
 name = "hex"
@@ -458,15 +436,6 @@ name = "libc"
 version = "0.2.98"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320cfe77175da3a483efed4bc0adc1968ca050b098ce4f2f1c13a56626128790"
-
-[[package]]
-name = "log"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e19e8d5c34a3e0e2223db8e060f9e8264aeeb5c5fc64a4ee9965c062211c024b"
-dependencies = [
- "log 0.4.14",
-]
 
 [[package]]
 name = "log"
@@ -540,12 +509,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nodrop"
-version = "0.1.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72ef4a56884ca558e5ddb05a1d1e7e1bfd9a68d9ed024c21704cc98872dae1bb"
-
-[[package]]
 name = "normalize-line-endings"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -579,12 +542,6 @@ dependencies = [
  "hermit-abi",
  "libc",
 ]
-
-[[package]]
-name = "odds"
-version = "0.2.26"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4eae0151b9dacf24fcc170d9995e511669a082856a91f958a2fe380bfab3fb22"
 
 [[package]]
 name = "once_cell"
@@ -719,7 +676,7 @@ dependencies = [
  "bytes",
  "heck",
  "itertools 0.9.0",
- "log 0.4.14",
+ "log",
  "multimap",
  "petgraph",
  "prost",
@@ -772,7 +729,7 @@ version = "2.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c367feabb5f78ca3b2ec25e2c4a5f4f0826017d7fb634f52961afd1a6613d1fb"
 dependencies = [
- "log 0.4.14",
+ "log",
  "which",
 ]
 
@@ -970,53 +927,38 @@ version = "0.5.1"
 source = "git+https://github.com/nathanwhit/sawtooth-sdk-rust?branch=main#038297ba2ddce9c53d5f1e75b5631006b775de83"
 dependencies = [
  "ctrlc",
- "glob 0.3.0",
- "hex 0.4.3",
+ "glob",
+ "hex",
  "libc",
- "log 0.4.14",
+ "log",
  "openssl",
  "protobuf",
  "protoc-rust",
  "rand 0.8.4",
  "rust-crypto",
- "secp256k1 0.20.3",
- "uuid 0.8.2",
+ "secp256k1",
+ "uuid",
  "zmq",
 ]
 
 [[package]]
 name = "sawtooth-sdk-creditcoin"
 version = "0.5.1"
-source = "git+https://github.com/nathanwhit/sawtooth-sdk-rust?branch=sawtooth1.0.5#06d781bd399d02d1ad1d38c0f8c4f64587c649c2"
+source = "git+https://github.com/nathanwhit/sawtooth-sdk-rust?branch=sawtooth1.0.5#f37195c774de3ea573e12ed88ab17a6595521319"
 dependencies = [
  "ctrlc",
- "glob 0.2.11",
- "hex 0.3.2",
+ "glob",
+ "hex",
  "libc",
- "log 0.3.9",
+ "log",
  "openssl",
  "protobuf",
  "protoc-rust",
- "rand 0.4.6",
+ "rand 0.8.4",
  "rust-crypto",
- "secp256k1 0.7.1",
- "uuid 0.5.1",
+ "secp256k1",
+ "uuid",
  "zmq",
-]
-
-[[package]]
-name = "secp256k1"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f9936100bc0f85f254359b0f86d9aefe8440d00d40d945dbe1908206574b81e"
-dependencies = [
- "arrayvec",
- "gcc",
- "libc",
- "rand 0.3.23",
- "rustc-serialize",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1204,15 +1146,6 @@ checksum = "8ccb82d61f80a663efe1f787a51b16b5a51e3314d6ac365b08639f52387b33f3"
 
 [[package]]
 name = "uuid"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcc7e3b898aa6f6c08e5295b6c89258d1331e9ac578cc992fb818759951bdc22"
-dependencies = [
- "rand 0.3.23",
-]
-
-[[package]]
-name = "uuid"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
@@ -1293,7 +1226,7 @@ checksum = "aad98a7a617d608cd9e1127147f630d24af07c7cd95ba1533246d96cbdd76c66"
 dependencies = [
  "bitflags",
  "libc",
- "log 0.4.14",
+ "log",
  "zmq-sys",
 ]
 
