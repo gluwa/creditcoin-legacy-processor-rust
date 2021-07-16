@@ -34,7 +34,8 @@ pub const SKIP_TO_GET_60: usize = 512 / 8 * 2 - 60; // 512 - hash size in bits, 
 
 pub const DEAL_EXP_FIX_BLOCK: u64 = 278890;
 
-pub const GATEWAY_TIMEOUT: i32 = 500000;
+pub const GATEWAY_TIMEOUT: i32 = 5000;
+pub const EXTERNAL_GATEWAY_TIMEOUT: i32 = 25000;
 
 pub const MESSAGE_TIMEOUT: Duration = Duration::from_secs(6);
 

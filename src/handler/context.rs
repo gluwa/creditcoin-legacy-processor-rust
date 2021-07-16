@@ -1,8 +1,7 @@
 use std::mem;
 
-use crate::sdk::messages::processor::TpProcessRequest;
-
 use super::{
+    constants::{EXTERNAL_GATEWAY_TIMEOUT, GATEWAY_TIMEOUT},
     settings::Settings,
     types::{
         CCApplyError::{InternalError, InvalidTransaction},
@@ -10,6 +9,7 @@ use super::{
     },
     utils::{self, sha512_id},
 };
+use crate::sdk::messages::processor::TpProcessRequest;
 
 pub struct HandlerContext {
     // sighash: Option<SigHash>,
@@ -31,7 +31,11 @@ impl HandlerContext {
         settings: Settings,
     ) -> TxnResult<Self> {
         Ok(Self {
-            local_gateway_sock: utils::create_socket(&gateway_context, &gateway_endpoint)?,
+            local_gateway_sock: utils::create_socket(
+                &gateway_context,
+                &gateway_endpoint,
+                GATEWAY_TIMEOUT,
+            )?,
             gateway_context,
             gateway_endpoint,
             settings,
@@ -62,7 +66,11 @@ impl HandlerContext {
 
     fn try_verify_external(&mut self, gateway_command: &str) -> TxnResult<Option<String>> {
         log::warn!("Falling back to external gateway");
-        let new_local_sock = utils::create_socket(&self.gateway_context, &self.gateway_endpoint)?;
+        let new_local_sock = utils::create_socket(
+            &self.gateway_context,
+            &self.gateway_endpoint,
+            GATEWAY_TIMEOUT,
+        )?;
         mem::drop(mem::replace(&mut self.local_gateway_sock, new_local_sock));
 
         let address = self.get_setting("sawtooth.validator.gateway");
@@ -74,8 +82,11 @@ impl HandlerContext {
                 external_gateway_address.insert_str(0, "tcp://");
             }
 
-            let external_gateway_sock =
-                utils::create_socket(&self.gateway_context, &external_gateway_address)?;
+            let external_gateway_sock = utils::create_socket(
+                &self.gateway_context,
+                &external_gateway_address,
+                EXTERNAL_GATEWAY_TIMEOUT,
+            )?;
             external_gateway_sock
                 .send(gateway_command, 0)
                 .map_err(|e| {

@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 use std::fmt::Write;
 
 use crate::ext::IntegerExt;
-use crate::handler::constants::GATEWAY_TIMEOUT;
-use prost::Message;
-use rug::Integer;
+
 use crate::sdk::messages::processor::TpProcessRequest;
 use crate::sdk::processor::handler::TransactionContext;
+use prost::Message;
+use rug::Integer;
 use serde_cbor::Value;
 use sha2::{Digest, Sha512};
 
@@ -175,17 +175,21 @@ pub fn params_from_bytes(bytes: &[u8]) -> anyhow::Result<Value> {
     Ok(res)
 }
 
-pub fn create_socket(zmq_context: &zmq::Context, endpoint: &str) -> TxnResult<zmq::Socket> {
+pub fn create_socket(
+    zmq_context: &zmq::Context,
+    endpoint: &str,
+    timeout: i32,
+) -> TxnResult<zmq::Socket> {
     let sock = zmq_context
         .socket(zmq::SocketType::REQ)
         .map_err(|e| CCApplyError::InternalError(format!("Failed to create socket : {}", e)))?;
     sock.connect(endpoint).map_err(|e| {
         CCApplyError::InternalError(format!("Failed to connect socket to endpoint : {}", e))
     })?;
-    sock.set_rcvtimeo(GATEWAY_TIMEOUT).map_err(|e| {
+    sock.set_rcvtimeo(timeout).map_err(|e| {
         CCApplyError::InternalError(format!("Failed to set socket receive timeout : {}", e))
     })?;
-    sock.set_sndtimeo(GATEWAY_TIMEOUT).map_err(|e| {
+    sock.set_sndtimeo(timeout).map_err(|e| {
         CCApplyError::InternalError(format!("Failed to set socket send timeout : {}", e))
     })?;
     sock.set_linger(0)
