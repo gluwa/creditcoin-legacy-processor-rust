@@ -1,10 +1,10 @@
 use std::fmt;
 use std::ops::Deref;
 
-use derive_more::{From, Into};
-use rug::Integer;
 use crate::sdk::processor::handler::ApplyError;
 use crate::sdk::processor::handler::ContextError;
+use derive_more::{From, Into};
+use rug::Integer;
 
 use crate::handler::constants::*;
 use crate::handler::utils::sha512_id;

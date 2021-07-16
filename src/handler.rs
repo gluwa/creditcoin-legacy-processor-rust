@@ -22,9 +22,6 @@ use context::HandlerContext;
 #[cfg(all(test, feature = "mock"))]
 use context::mocked::MockHandlerContext as HandlerContext;
 
-use constants::*;
-use log::{debug, info};
-use rug::{Assign, Integer};
 use crate::sdk::{
     messages::processor::TpProcessRequest,
     processor::{
@@ -32,6 +29,9 @@ use crate::sdk::{
         TransactionProcessor,
     },
 };
+use constants::*;
+use log::{debug, info};
+use rug::{Assign, Integer};
 use settings::*;
 use std::{convert::TryFrom, default::Default, ops::Deref};
 use types::CCApplyError::InvalidTransaction;

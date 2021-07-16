@@ -5,9 +5,9 @@ use std::{
     time::Duration,
 };
 
+use crate::sdk::{messaging::stream::ReceiveError, processor::EmptyTransactionContext};
 use dashmap::DashMap;
 use log::{info, trace, warn};
-use crate::sdk::{messaging::stream::ReceiveError, processor::EmptyTransactionContext};
 
 use crate::handler::{constants::SETTINGS_NAMESPACE, filter, types::CCApplyError};
 

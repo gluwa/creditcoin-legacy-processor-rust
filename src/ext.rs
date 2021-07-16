@@ -2,9 +2,9 @@ use crate::handler::{
     constants::{INVALID_NUMBER_FORMAT_ERR, NEGATIVE_NUMBER_ERR},
     types::{CCApplyError, TxnResult},
 };
+use crate::sdk::processor::handler::ApplyError;
 use anyhow::Context;
 use rug::Integer;
-use crate::sdk::processor::handler::ApplyError;
 
 pub trait IntegerExt {
     fn try_parse<S: AsRef<str>>(s: S) -> TxnResult<Integer> {

@@ -26,10 +26,10 @@ use clap::{clap_app, crate_authors, crate_description, crate_version};
 use fern::colors::ColoredLevelConfig;
 use log::info;
 
-#[cfg(feature = "old-sawtooth")]
-pub use sawtooth_sdk_compat as sdk;
 #[cfg(not(feature = "old-sawtooth"))]
 pub use sawtooth_sdk as sdk;
+#[cfg(feature = "old-sawtooth")]
+pub use sawtooth_sdk_compat as sdk;
 
 use crate::sdk::processor::TransactionProcessor;
 
