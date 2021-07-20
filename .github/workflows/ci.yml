@@ -1,0 +1,86 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  check:
+    name: Check Build
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake make gcc protobuf-compiler libzmq3-dev
+      - name: Check crate without default features
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: --no-default-features
+      - name: Check crate with all features
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: --all-features
+  test:
+    name: Test Suite
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake make gcc protobuf-compiler libzmq3-dev
+      - name: Run tests for Sawtooth 1.2
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+      - name: Run tests for Sawtooth 1.0.5
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --features 'old-sawtooth'
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          components: rustfmt
+      
+      - name: Check formatting
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: -- --check
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          components: clippy
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake make gcc protobuf-compiler libzmq3-dev
+      - name: Run Clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -- -D warnings
