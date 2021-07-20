@@ -9,7 +9,7 @@ use super::{
     },
     utils::{self, sha512_id},
 };
-use crate::sdk::messages::processor::TpProcessRequest;
+use sawtooth_sdk::messages::processor::TpProcessRequest;
 
 pub struct HandlerContext {
     // sighash: Option<SigHash>,

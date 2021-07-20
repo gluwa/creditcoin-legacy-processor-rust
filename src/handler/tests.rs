@@ -3,20 +3,20 @@
 
 mod mocked;
 
-use crate::sdk::processor::handler::ApplyError;
 use mocked::{MockSettings, MockTransactionContext};
+use sawtooth_sdk::processor::handler::ApplyError;
 use serde_cbor::Value;
 
 use std::collections::BTreeMap;
 use std::sync::Once;
 
-use crate::sdk::messages::processor::TpProcessRequest;
-use crate::sdk::processor::handler::TransactionContext;
 use enclose::enclose;
 use itertools::Itertools;
 use mockall::predicate;
 use prost::Message;
 use rug::Integer;
+use sawtooth_sdk::messages::processor::TpProcessRequest;
+use sawtooth_sdk::processor::handler::TransactionContext;
 
 use crate::ext::{IntegerExt, MessageExt};
 use crate::handler::constants::*;

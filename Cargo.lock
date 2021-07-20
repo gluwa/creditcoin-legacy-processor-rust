@@ -98,8 +98,7 @@ dependencies = [
  "prost-build",
  "rand 0.8.4",
  "rug",
- "sawtooth-sdk-creditcoin 0.5.1 (git+https://github.com/nathanwhit/sawtooth-sdk-rust?branch=main)",
- "sawtooth-sdk-creditcoin 0.5.1 (git+https://github.com/nathanwhit/sawtooth-sdk-rust?branch=sawtooth1.0.5)",
+ "sawtooth-sdk-creditcoin",
  "serde",
  "serde_cbor",
  "serde_json",
@@ -924,27 +923,7 @@ checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
 [[package]]
 name = "sawtooth-sdk-creditcoin"
 version = "0.5.1"
-source = "git+https://github.com/nathanwhit/sawtooth-sdk-rust?branch=main#038297ba2ddce9c53d5f1e75b5631006b775de83"
-dependencies = [
- "ctrlc",
- "glob",
- "hex",
- "libc",
- "log",
- "openssl",
- "protobuf",
- "protoc-rust",
- "rand 0.8.4",
- "rust-crypto",
- "secp256k1",
- "uuid",
- "zmq",
-]
-
-[[package]]
-name = "sawtooth-sdk-creditcoin"
-version = "0.5.1"
-source = "git+https://github.com/nathanwhit/sawtooth-sdk-rust?branch=sawtooth1.0.5#f37195c774de3ea573e12ed88ab17a6595521319"
+source = "git+https://github.com/nathanwhit/sawtooth-sdk-rust?branch=main#4dfd2a84485aace2f0cd754efa26ae40b3e80efc"
 dependencies = [
  "ctrlc",
  "glob",

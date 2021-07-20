@@ -22,16 +22,16 @@ use context::HandlerContext;
 #[cfg(all(test, feature = "mock"))]
 use context::mocked::MockHandlerContext as HandlerContext;
 
-use crate::sdk::{
+use constants::*;
+use log::{debug, info};
+use rug::{Assign, Integer};
+use sawtooth_sdk::{
     messages::processor::TpProcessRequest,
     processor::{
         handler::{ApplyError, TransactionContext, TransactionHandler},
         TransactionProcessor,
     },
 };
-use constants::*;
-use log::{debug, info};
-use rug::{Assign, Integer};
 use settings::*;
 use std::{convert::TryFrom, default::Default, ops::Deref};
 use types::CCApplyError::InvalidTransaction;

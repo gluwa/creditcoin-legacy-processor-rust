@@ -3,10 +3,10 @@ use std::fmt::Write;
 
 use crate::ext::IntegerExt;
 
-use crate::sdk::messages::processor::TpProcessRequest;
-use crate::sdk::processor::handler::TransactionContext;
 use prost::Message;
 use rug::Integer;
+use sawtooth_sdk::messages::processor::TpProcessRequest;
+use sawtooth_sdk::processor::handler::TransactionContext;
 use serde_cbor::Value;
 use sha2::{Digest, Sha512};
 

@@ -1,5 +1,5 @@
-use crate::sdk::processor::handler::TransactionContext;
 use mockall::mock;
+use sawtooth_sdk::processor::handler::TransactionContext;
 
 mock! {
     pub TransactionContext {}

@@ -26,12 +26,7 @@ use clap::{clap_app, crate_authors, crate_description, crate_version};
 use fern::colors::ColoredLevelConfig;
 use log::info;
 
-#[cfg(not(feature = "old-sawtooth"))]
-pub use sawtooth_sdk as sdk;
-#[cfg(feature = "old-sawtooth")]
-pub use sawtooth_sdk_compat as sdk;
-
-use crate::sdk::processor::TransactionProcessor;
+use sawtooth_sdk::processor::TransactionProcessor;
 
 const DEFAULT_ENDPOINT: &str = "tcp://localhost:4004";
 const DEFAULT_GATEWAY: &str = "tcp://localhost:55555";
