@@ -153,9 +153,9 @@ impl AsRef<str> for Address {
     }
 }
 
-impl Into<String> for &Address {
-    fn into(self) -> String {
-        self.0.clone()
+impl From<&Address> for String {
+    fn from(address: &Address) -> String {
+        address.0.clone()
     }
 }
 
