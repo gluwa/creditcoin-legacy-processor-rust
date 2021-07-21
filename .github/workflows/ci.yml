@@ -31,6 +31,7 @@ jobs:
   test:
     name: Testing ${{ matrix.feature }} with Rust ${{ matrix.toolchain}}
     runs-on: ubuntu-18.04
+    continue-on-error: ${{ matrix.toolchain == 'nightly' }}
     strategy:
       matrix:
         feature: ["", "--features 'old-sawtooth'"]
