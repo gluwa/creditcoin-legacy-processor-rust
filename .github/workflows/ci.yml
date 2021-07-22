@@ -72,6 +72,11 @@ jobs:
         with:
           config: .grcov.yml
 
+      - name: Exclude target/debug/ dir from coverage reports
+        if: matrix.toolchain == 'nightly'
+        run: |
+          rm -rf target/
+
       - uses: codecov/codecov-action@v2
         if: matrix.toolchain == 'nightly'
         with:
