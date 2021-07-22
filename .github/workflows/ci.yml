@@ -16,6 +16,7 @@ jobs:
           toolchain: stable
           profile: minimal
           override: true
+      - uses: Swatinem/rust-cache@v1
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake make gcc protobuf-compiler libzmq3-dev
       - name: Check crate without default features
@@ -45,6 +46,7 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           profile: minimal
           override: true
+      - uses: Swatinem/rust-cache@v1
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake make gcc protobuf-compiler libzmq3-dev
 
@@ -108,6 +110,7 @@ jobs:
           profile: minimal
           override: true
           components: clippy
+      - uses: Swatinem/rust-cache@v1
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake make gcc protobuf-compiler libzmq3-dev
       - name: Run Clippy
