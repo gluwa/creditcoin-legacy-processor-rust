@@ -1402,6 +1402,26 @@ fn send_funds_to_self() {
     execute_failure(command, &request, &tx_ctx, &mut ctx, "Invalid destination");
 }
 
+#[test]
+#[should_panic(expected = "on purpose")]
+fn send_funds_with_missing_handler_sighash() {
+    init_logs();
+
+    let destination = SigHash::from("mysighash");
+    let command = SendFunds {
+        amount: 1.into(),
+        sighash: destination.clone(),
+    };
+
+    let request = TpProcessRequest::default();
+    let tx_ctx = MockTransactionContext::default();
+    let mut ctx = MockHandlerContext::default();
+    ctx.expect_sighash()
+        .return_once(|_| Err(anyhow::anyhow!("on purpose")));
+
+    command.execute(&request, &tx_ctx, &mut ctx).unwrap()
+}
+
 // --- RegisterAddress ---
 
 fn charge_fee(tx_ctx: &mut MockTransactionContext, sighash: &SigHash) {
