@@ -94,14 +94,12 @@ fn main() -> Result<()> {
     let mut processor = TransactionProcessor::new(endpoint);
 
     info!("ccprocessor-rust connecting to gateway {} ...", gateway);
-    let handler = handler::CCTransactionHandler::new(&mut processor, gateway);
+    let handler = handler::CCTransactionHandler::new(gateway);
 
     processor.add_handler(&handler);
     processor.start();
 
     info!("ccprocessor-rust exiting ...");
-
-    handler.updater.exit();
 
     Ok(())
 }

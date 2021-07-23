@@ -1,6 +1,5 @@
 pub mod constants;
 pub mod context;
-pub mod settings;
 mod tests;
 pub mod types;
 pub mod utils;
@@ -27,12 +26,9 @@ use log::{debug, info};
 use rug::{Assign, Integer};
 use sawtooth_sdk::{
     messages::processor::TpProcessRequest,
-    processor::{
-        handler::{ApplyError, TransactionContext, TransactionHandler},
-        TransactionProcessor,
-    },
+    processor::handler::{ApplyError, TransactionContext, TransactionHandler},
 };
-use settings::*;
+
 use std::{convert::TryFrom, default::Default, ops::Deref};
 use types::CCApplyError::InvalidTransaction;
 use types::*;
@@ -1734,8 +1730,8 @@ fn reward(
     let mut new_formula = false;
 
     // TODO: transitioning
-
-    if let Some(val) = ctx.get_setting("sawtooth.validator.update1") {
+    let s = ctx.get_setting("sawtooth.validator.update1")?;
+    if let Some(val) = s {
         let update_block = Integer::try_parse(&*val)?;
         if update_block + 500 < *processed_block_idx {
             new_formula = true;
@@ -1782,7 +1778,7 @@ fn reward(
 
         let mut i = last_block_idx;
         for signature in &signatures {
-            award(tx_ctx, new_formula, &i, &signature)?;
+            award(tx_ctx, new_formula, &i, signature)?;
             i -= 1;
         }
     }
@@ -1971,24 +1967,16 @@ impl CCTransaction for Housekeeping {
 pub struct CCTransactionHandler {
     zmq_context: zmq::Context,
     gateway_endpoint: String,
-    settings: Settings,
-    pub(crate) updater: SettingsUpdater,
 }
 
 impl CCTransactionHandler {
-    pub fn new<S: Into<String>>(processor: &mut TransactionProcessor, gateway: S) -> Self {
+    pub fn new<S: Into<String>>(gateway: S) -> Self {
         let gateway_endpoint: String = gateway.into();
         let context = zmq::Context::new();
-        let settings = Settings::new();
 
         Self {
             zmq_context: context,
             gateway_endpoint,
-            updater: SettingsUpdater::new(
-                processor.empty_context(Some(MESSAGE_TIMEOUT)),
-                settings.clone(),
-            ),
-            settings,
         }
     }
 }
@@ -2029,7 +2017,7 @@ impl TransactionHandler for CCTransactionHandler {
         let mut handler_context = HandlerContext::create(
             self.zmq_context.clone(),
             self.gateway_endpoint.clone(),
-            self.settings.clone(),
+            &*context,
         )
         .log_err()
         .to_apply_error()?;

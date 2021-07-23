@@ -20,7 +20,6 @@ use sawtooth_sdk::processor::handler::TransactionContext;
 
 use crate::ext::{IntegerExt, MessageExt};
 use crate::handler::constants::*;
-use crate::handler::settings::Settings;
 use crate::handler::types::{CCApplyError, SigHash};
 use crate::handler::types::{Guid, WalletId};
 use crate::handler::utils::{self, calc_interest};
@@ -2844,7 +2843,7 @@ fn housekeeping_reward_in_chain() {
     // pretend update1 is not set
     let mut ctx = MockHandlerContext::default();
     expect!(ctx,
-        get_setting(k if k == "sawtooth.validator.update1") -> None
+        get_setting(k if k == "sawtooth.validator.update1") -> Ok(None)
     );
 
     let height_start = CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT + 1;
@@ -2932,7 +2931,7 @@ fn housekeeping_reward_fork() {
     // pretend update1 is not set
     let mut ctx = MockHandlerContext::default();
     expect!(ctx,
-        get_setting(k if k == "sawtooth.validator.update1") -> None
+        get_setting(k if k == "sawtooth.validator.update1") -> Ok(None)
     );
 
     // the get_reward_block_signatures path iterates in reverse inclusively, so if last_processed = 5
