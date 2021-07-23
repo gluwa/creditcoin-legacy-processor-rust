@@ -17,6 +17,8 @@ use prost::Message;
 use rug::Integer;
 use sawtooth_sdk::messages::processor::TpProcessRequest;
 use sawtooth_sdk::processor::handler::TransactionContext;
+use sawtooth_sdk::processor::handler::TransactionHandler;
+use sawtooth_sdk::processor::TransactionProcessor;
 
 use crate::ext::{IntegerExt, MessageExt};
 use crate::handler::constants::*;
@@ -24,6 +26,7 @@ use crate::handler::settings::Settings;
 use crate::handler::types::{CCApplyError, SigHash};
 use crate::handler::types::{Guid, WalletId};
 use crate::handler::utils::{self, calc_interest};
+use crate::handler::CCTransactionHandler;
 use crate::{protos, string};
 
 use super::context::mocked::MockHandlerContext;
@@ -1381,25 +1384,25 @@ fn send_funds_cannot_afford_amount() {
 }
 
 #[test]
-fn send_funds_to_self() {
+fn send_funds_to_self() -> Result<(), ApplyError> {
     init_logs();
 
-    let destination = SigHash::from("mysighash");
-    let command = SendFunds {
-        amount: 1.into(),
-        sighash: destination.clone(),
-    };
+    // Given: a working handler
+    let endpoint: &str = "tcp://localhost:4004";
+    let gateway: &str = "tcp://localhost:55555";
 
-    let request = TpProcessRequest::default();
+    let mut processor = TransactionProcessor::new(endpoint);
+    let handler = CCTransactionHandler::new(&mut processor, gateway);
 
-    let tx_ctx = MockTransactionContext::default();
+    // When:
+    let command = TwoArgCommand::new("SendFunds", 1, "foo");
+    let mut request = TpProcessRequest::default();
+    request.payload = serde_cbor::to_vec(&command).unwrap();
 
-    let my_sighash = SigHash::from("mysighash");
+    let mut tx_ctx = MockTransactionContext::default();
+    return handler.apply(&request, &mut tx_ctx);
 
-    let mut ctx = MockHandlerContext::default();
-    expect!(ctx, sighash -> my_sighash);
-
-    execute_failure(command, &request, &tx_ctx, &mut ctx, "Invalid destination");
+    // todo: assert that wallets changed their amounts
 }
 
 // --- RegisterAddress ---
