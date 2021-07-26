@@ -170,6 +170,12 @@ pub fn compress(uncompressed: &str) -> TxnResult<SigHash> {
     }
 }
 
+pub fn sighash_from_pubkey(hex_pub_key: &str) -> TxnResult<SigHash> {
+    let compressed = compress(hex_pub_key)?;
+    let hash = sha512_id(compressed.as_bytes());
+    Ok(SigHash(hash))
+}
+
 pub fn params_from_bytes(bytes: &[u8]) -> anyhow::Result<Value> {
     let res = serde_cbor::from_slice(bytes)?;
     Ok(res)

@@ -4,19 +4,31 @@
 mod mocked;
 
 use mocked::{MockSettings, MockTransactionContext};
+use sawtooth_sdk::processor::TransactionProcessor;
 use sawtooth_sdk::processor::handler::ApplyError;
+use sawtooth_sdk::signing::{create_context, Context, CryptoFactory};
+use sawtooth_sdk::signing::secp256k1::Secp256k1PrivateKey;
 use serde_cbor::Value;
 
 use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::Read;
 use std::sync::Once;
 
 use enclose::enclose;
 use itertools::Itertools;
 use mockall::lazy_static;
 use mockall::predicate;
+use openssl::sha::sha512;
 use prost::Message;
+use protobuf::Message as ProtobufMessage;
+use protobuf::RepeatedField;
+use rand::{thread_rng, Rng};
+use reqwest;
 use rug::Integer;
+use sawtooth_sdk::messages::batch::{Batch, BatchHeader, BatchList};
 use sawtooth_sdk::messages::processor::TpProcessRequest;
+use sawtooth_sdk::messages::transaction::{Transaction, TransactionHeader};
 use sawtooth_sdk::processor::handler::TransactionContext;
 
 use crate::ext::{IntegerExt, MessageExt};
@@ -44,7 +56,8 @@ use super::LockDealOrder;
 use super::RegisterAddress;
 use super::RegisterTransfer;
 use super::SendFunds;
-use super::{CCTransaction, Housekeeping};
+use super::{CCTransaction, CCTransactionHandler, Housekeeping};
+use super::{_family_name, _family_versions, _namespaces};
 
 use once_cell::sync::Lazy;
 
@@ -1473,6 +1486,22 @@ fn expect_delete_state_entries(tx_ctx: &mut MockTransactionContext, entries: Vec
 }
 
 // ----- COMMAND EXECUTION TESTS -----
+
+impl Default for CCTransactionHandler {
+    fn default() -> Self {
+        let mut processor = TransactionProcessor::new("");
+        Self::new(&mut processor, "")
+    }
+}
+
+// TODO: replace with hex::encode() after PR#6 is merged
+fn to_hex_string(bytes: &Vec<u8>) -> String {
+    let strs: Vec<String> = bytes.iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    strs.join("")
+}
+
 #[track_caller]
 fn execute_success(
     command: impl CCTransaction,
@@ -1489,6 +1518,7 @@ fn execute_success(
 }
 
 #[track_caller]
+#[cfg(not(all(test, feature = "integration-testing")))]
 fn execute_failure(
     command: impl CCTransaction + ToGenericCommand,
     request: &TpProcessRequest,
@@ -1496,18 +1526,142 @@ fn execute_failure(
     ctx: &mut MockHandlerContext,
     expected_err: &str,
 ) {
-    if cfg!(not(all(test, feature = "integration-testing"))) {
-        let result = command.execute(request, tx_ctx, ctx).unwrap_err();
-        match result.downcast_ref::<CCApplyError>() {
-            Some(CCApplyError::InvalidTransaction(s)) => {
-                assert_eq!(s, expected_err);
-            }
-            _ => panic!("Expected an InvalidTransaction error"),
-        };
-    } else {
-        // TODO: send to REST API and expect failure!
-        println!("DEBUG: expected failure {}", expected_err);
-    }
+    let result = command.execute(request, tx_ctx, ctx).unwrap_err();
+    match result.downcast_ref::<CCApplyError>() {
+        Some(CCApplyError::InvalidTransaction(s)) => {
+            assert_eq!(s, expected_err);
+        }
+        _ => panic!("Expected an InvalidTransaction error"),
+    };
+}
+
+#[track_caller]
+#[cfg(all(test, feature = "integration-testing"))]
+fn execute_failure(
+    command: impl CCTransaction + ToGenericCommand,
+    _request: &TpProcessRequest,
+    _tx_ctx: &MockTransactionContext,
+    _ctx: &mut MockHandlerContext,
+    expected_err: &str,
+) {
+    let command = command.to_generic_command();
+    let payload_bytes = serde_cbor::to_vec(&command).unwrap();
+
+    let home = std::env::var("HOME").unwrap();
+    let private_key_file_name = format!("{}/.sawtooth/keys/testing.priv", home);
+
+    // TODO: read keys via command line args
+    let mut private_key_file = File::open(private_key_file_name).unwrap();
+    let mut private_key_hex = String::new();
+    private_key_file.read_to_string(&mut private_key_hex).unwrap();
+
+    let private_key = Secp256k1PrivateKey::from_hex(private_key_hex.trim()).unwrap();
+    let signing_context = create_context("secp256k1").unwrap();
+    let factory = CryptoFactory::new(&*signing_context);
+    let signer = factory.new_signer(&private_key);
+
+    // build transaction
+    let mut txn_header = TransactionHeader::new();
+    txn_header.set_family_name(_family_name());
+
+    let family_vers = _family_versions();
+    let last_version = family_vers.last().unwrap();
+    txn_header.set_family_version(last_version.to_string());
+
+    // Generate a random 128 bit number to use as a nonce
+    let mut nonce = [0u8; 16];
+    thread_rng()
+        .try_fill(&mut nonce[..])
+        .expect("Error generating random nonce");
+    txn_header.set_nonce(to_hex_string(&nonce.to_vec()));
+
+    let input_vec = _namespaces();
+    let output_vec = input_vec.clone();
+
+    txn_header.set_inputs(RepeatedField::from_vec(input_vec));
+    txn_header.set_outputs(RepeatedField::from_vec(output_vec));
+    txn_header.set_signer_public_key(
+        signer
+            .get_public_key()
+            .expect("Error retrieving Public Key")
+            .as_hex(),
+    );
+    txn_header.set_batcher_public_key(
+        signer
+        .get_public_key()
+        .expect("Error retrieving Public Key")
+        .as_hex(),
+    );
+
+    txn_header.set_payload_sha512(to_hex_string(&sha512(&payload_bytes).to_vec()));
+    let txn_header_bytes = txn_header
+        .write_to_bytes()
+        .expect("Error converting transaction header to bytes");
+
+    // sign transaction
+    let signature = signer
+        .sign(&txn_header_bytes)
+        .expect("Error signing the transaction header");
+
+    let mut txn = Transaction::new();
+    txn.set_header(txn_header_bytes.to_vec());
+    txn.set_header_signature(signature);
+    txn.set_payload(payload_bytes);
+
+    // batch header
+    let mut batch_header = BatchHeader::new();
+
+    batch_header.set_signer_public_key(
+        signer
+            .get_public_key()
+            .expect("Error retrieving Public Key")
+            .as_hex(),
+    );
+
+    let transaction_ids = vec![txn.clone()]
+        .iter()
+        .map(|trans| String::from(trans.get_header_signature()))
+        .collect();
+
+    batch_header.set_transaction_ids(RepeatedField::from_vec(transaction_ids));
+
+    let batch_header_bytes = batch_header
+        .write_to_bytes()
+        .expect("Error converting batch header to bytes");
+
+    let signature = signer
+        .sign(&batch_header_bytes)
+        .expect("Error signing the batch header");
+
+    let mut batch = Batch::new();
+
+    batch.set_header(batch_header_bytes);
+    batch.set_header_signature(signature);
+    batch.set_transactions(RepeatedField::from_vec(vec![txn]));
+
+    let mut batch_list = BatchList::new();
+    batch_list.set_batches(RepeatedField::from_vec(vec![batch]));
+    let batch_list_bytes = batch_list
+        .write_to_bytes()
+        .expect("Error converting batch list to bytes");
+
+    // TODO: specify address via cli flags
+    let client = reqwest::blocking::Client::new();
+    let response = client
+        .post("http://127.0.0.1:8008/batches")
+        .header("Content-Type", "application/octet-stream")
+        .body(
+            batch_list_bytes,
+        )
+        .send()
+        .unwrap();
+
+    let body = response.text();
+
+    println!("***** DEBUG, body={:?}", body);
+
+    // TODO: send to REST API and expect failure!
+    println!("DEBUG: expected failure {}", expected_err);
 }
 
 // --- SendFunds ---
