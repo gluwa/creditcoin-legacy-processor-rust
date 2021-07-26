@@ -90,31 +90,38 @@ impl<'tx> HandlerContext<'tx> {
         Guid(request.get_header().get_nonce().to_owned())
     }
 
+    fn find_setting(bytes: &[u8], key: &str) -> TxnResult<Option<String>> {
+        let setting = Setting::parse_from_bytes(&bytes).map_err(|e| {
+            CCApplyError::InternalError(format!("Failed to parse setting from bytes: {}", e))
+        })?;
+        for entry in setting.get_entries() {
+            if entry.get_key() == key {
+                return Ok(Some(entry.get_value().to_owned()));
+            }
+        }
+        Ok(None)
+    }
+
     pub fn get_setting(&self, key: &str) -> TxnResult<Option<String>> {
         log::debug!("getting setting for key {:?}", key);
         let k = make_settings_key(key);
         let state = self.tx_ctx.get_state_entry(&k);
         match state {
-            Ok(Some(value)) => {
-                let setting = Setting::parse_from_bytes(&value).map_err(|e| {
-                    CCApplyError::InternalError(format!(
-                        "Failed to parse setting from bytes: {}",
-                        e
-                    ))
-                })?;
-                for entry in setting.get_entries() {
-                    if entry.get_key() == key {
-                        return Ok(Some(entry.get_value().to_owned()));
-                    }
-                }
+            Ok(Some(value)) => Self::find_setting(&value, key),
+            Ok(None) => {
+                log::debug!("no setting found for key {:?}", key);
                 Ok(None)
             }
-            Ok(None) => Ok(Option::<String>::None),
             Err(ContextError::AuthorizationError(_)) => {
-                log::error!(
-                    "Got an authorization error, address is malformed or not in transaction inputs"
-                );
-                Ok(None)
+                log::warn!("Falling back to a client request - the settings namespace is not declared as a transaction input");
+                let state = self.tx_ctx.get_state_entries_by_prefix(&k)?;
+                if state.is_empty() {
+                    log::debug!("setting not found for key {:?}", key);
+                    Ok(None)
+                } else {
+                    let (_addr, value) = &state[0];
+                    Self::find_setting(&value, key)
+                }
             }
             Err(e) => Err(e.into()),
         }
