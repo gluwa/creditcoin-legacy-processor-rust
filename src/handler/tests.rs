@@ -77,14 +77,16 @@ fn wallet_with(balance: Option<impl Into<Integer> + Clone>) -> Option<Vec<u8>> {
 macro_rules! expect {
     ($id: ident, $fun: ident where $c: expr, returning $ret: expr, $count: literal times) => {
 
-        paste::paste! {
-                #[allow(unused_variables)]
-                $id.[<expect_ $fun>]()
-                .times($count)
-                .withf($c)
-                .return_once($ret)
-            }
-
+        if cfg!(not(all(test, feature = "integration-testing"))) {
+            paste::paste! {
+                    #[allow(unused_variables)]
+                    $id.[<expect_ $fun>]()
+                    .times($count)
+                    .withf($c)
+                    .return_once($ret)
+                };
+        } else {
+        }
     };
     ($id: ident, $fun: ident where $c: expr, returning $ret: expr) => {
         expect!($id, $fun where $c, returning $ret, 1 times)
@@ -241,6 +243,7 @@ command!(Five, P1, P2, P3, P4, P5);
 command!(Six, P1, P2, P3, P4, P5, P6);
 
 #[track_caller]
+#[cfg(not(all(test, feature = "integration-testing")))]
 fn deserialize_success(value: impl Serialize, expected: impl Into<CCCommand>) {
     let value = value::to_value(value).unwrap();
     let expected = expected.into();
@@ -248,7 +251,11 @@ fn deserialize_success(value: impl Serialize, expected: impl Into<CCCommand>) {
     assert_eq!(result, expected);
 }
 
+#[cfg(all(test, feature = "integration-testing"))]
+fn deserialize_success(_value: impl Serialize, _expected: impl Into<CCCommand>) {}
+
 #[track_caller]
+#[cfg(not(all(test, feature = "integration-testing")))]
 fn deserialize_failure(value: impl Serialize, expected_err: &str) {
     let value = value::to_value(value).unwrap();
     let result = CCCommand::try_from(value).unwrap_err();
@@ -259,6 +266,9 @@ fn deserialize_failure(value: impl Serialize, expected_err: &str) {
         _ => panic!("Expected an InvalidTransaction error"),
     };
 }
+
+#[cfg(all(test, feature = "integration-testing"))]
+fn deserialize_failure(_value: impl Serialize, _expected_err: &str) {}
 
 // SendFunds
 
@@ -1217,51 +1227,55 @@ fn make_fee(guid: &Guid, sighash: &SigHash, block: Option<u64>) -> (String, Vec<
 }
 
 fn expect_set_state_entries(tx_ctx: &mut MockTransactionContext, entries: Vec<(String, Vec<u8>)>) {
-    expect!(tx_ctx, set_state_entries where {
-        let entries = entries.into_iter().sorted().collect_vec();
-        move |e| {
-            let s = itertools::sorted(e.clone()).collect_vec();
-            for (entry, other) in entries.iter().zip(&s) {
-                if entry != other {
-                    println!("Not equal! Expected {:?} -- Found {:?}", entry, other);
-                    return false;
-                }
-            }
-            if entries.len() != s.len() {
-                println!("Unequal lengths! Expected {:?} -- Found {:?}", entries.len(), s.len());
-                return false;
-            }
-            true
-        }
-    }, returning |_| Ok(()));
-}
-
-fn expect_delete_state_entries(tx_ctx: &mut MockTransactionContext, entries: Vec<String>) {
-    tx_ctx
-        .expect_delete_state_entries()
-        .once()
-        .withf({
+    if cfg!(not(all(test, feature = "integration-testing"))) {
+        expect!(tx_ctx, set_state_entries where {
             let entries = entries.into_iter().sorted().collect_vec();
             move |e| {
                 let s = itertools::sorted(e.clone()).collect_vec();
-                for (entry, &other) in entries.iter().zip(&s) {
+                for (entry, other) in entries.iter().zip(&s) {
                     if entry != other {
                         println!("Not equal! Expected {:?} -- Found {:?}", entry, other);
                         return false;
                     }
                 }
                 if entries.len() != s.len() {
-                    println!(
-                        "Unequal lengths! Expected {:?} -- Found {:?}",
-                        entries.len(),
-                        s.len()
-                    );
+                    println!("Unequal lengths! Expected {:?} -- Found {:?}", entries.len(), s.len());
                     return false;
                 }
                 true
             }
-        })
-        .returning(|_| Ok(Vec::new()));
+        }, returning |_| Ok(()));
+    }
+}
+
+fn expect_delete_state_entries(tx_ctx: &mut MockTransactionContext, entries: Vec<String>) {
+    if cfg!(not(all(test, feature = "integration-testing"))) {
+        tx_ctx
+            .expect_delete_state_entries()
+            .once()
+            .withf({
+                let entries = entries.into_iter().sorted().collect_vec();
+                move |e| {
+                    let s = itertools::sorted(e.clone()).collect_vec();
+                    for (entry, &other) in entries.iter().zip(&s) {
+                        if entry != other {
+                            println!("Not equal! Expected {:?} -- Found {:?}", entry, other);
+                            return false;
+                        }
+                    }
+                    if entries.len() != s.len() {
+                        println!(
+                            "Unequal lengths! Expected {:?} -- Found {:?}",
+                            entries.len(),
+                            s.len()
+                        );
+                        return false;
+                    }
+                    true
+                }
+            })
+            .returning(|_| Ok(Vec::new()));
+    }
 }
 
 // ----- COMMAND EXECUTION TESTS -----
@@ -1272,7 +1286,12 @@ fn execute_success(
     tx_ctx: &MockTransactionContext,
     ctx: &mut MockHandlerContext,
 ) {
-    command.execute(request, tx_ctx, ctx).unwrap();
+    if cfg!(not(all(test, feature = "integration-testing"))) {
+        command.execute(request, tx_ctx, ctx).unwrap();
+    } else {
+        // TODO: send to REST API and expect failure!
+        println!("DEBUG: expected success");
+    }
 }
 
 #[track_caller]
@@ -1283,13 +1302,18 @@ fn execute_failure(
     ctx: &mut MockHandlerContext,
     expected_err: &str,
 ) {
-    let result = command.execute(request, tx_ctx, ctx).unwrap_err();
-    match result.downcast_ref::<CCApplyError>() {
-        Some(CCApplyError::InvalidTransaction(s)) => {
-            assert_eq!(s, expected_err);
-        }
-        _ => panic!("Expected an InvalidTransaction error"),
-    };
+    if cfg!(not(all(test, feature = "integration-testing"))) {
+        let result = command.execute(request, tx_ctx, ctx).unwrap_err();
+        match result.downcast_ref::<CCApplyError>() {
+            Some(CCApplyError::InvalidTransaction(s)) => {
+                assert_eq!(s, expected_err);
+            }
+            _ => panic!("Expected an InvalidTransaction error"),
+        };
+    } else {
+        // TODO: send to REST API and expect failure!
+        println!("DEBUG: expected failure {}", expected_err);
+    }
 }
 
 // --- SendFunds ---
@@ -2027,16 +2051,18 @@ fn expect_get_state_entry(
     ret: Option<impl Message + Default>,
     times: Option<usize>,
 ) {
-    let id = id.into();
-    let ret = ret.map(|m| m.to_bytes());
-    tx_ctx
-        .expect_get_state_entry()
-        .times(times.unwrap_or(1))
-        .withf(move |m| m == &id)
-        .return_once({
-            let ret = ret.clone();
-            |_| Ok(ret)
-        });
+    if cfg!(not(all(test, feature = "integration-testing"))) {
+        let id = id.into();
+        let ret = ret.map(|m| m.to_bytes());
+        tx_ctx
+            .expect_get_state_entry()
+            .times(times.unwrap_or(1))
+            .withf(move |m| m == &id)
+            .return_once({
+                let ret = ret.clone();
+                |_| Ok(ret)
+            });
+    }
 }
 
 // --- CompleteDealOrder ---
