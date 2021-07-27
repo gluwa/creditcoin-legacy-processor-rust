@@ -30,6 +30,7 @@ use sawtooth_sdk::messages::batch::{Batch, BatchHeader, BatchList};
 use sawtooth_sdk::messages::processor::TpProcessRequest;
 use sawtooth_sdk::messages::transaction::{Transaction, TransactionHeader};
 use sawtooth_sdk::processor::handler::TransactionContext;
+use sawtooth_sdk::signing::Signer;
 
 use crate::ext::{IntegerExt, MessageExt};
 use crate::handler::constants::*;
@@ -1535,6 +1536,22 @@ fn execute_failure(
     };
 }
 
+fn signer_from_file(profile: &str) -> Signer {
+    let home = std::env::var("HOME").unwrap();
+    let private_key_file_name = format!("{}/.sawtooth/keys/{}.priv", home, profile);
+
+    // TODO: read keys via command line args
+    let mut private_key_file = File::open(private_key_file_name).unwrap();
+    let mut private_key_hex = String::new();
+    private_key_file.read_to_string(&mut private_key_hex).unwrap();
+
+    let private_key = Secp256k1PrivateKey::from_hex(private_key_hex.trim()).unwrap();
+    let signing_context = create_context("secp256k1").unwrap();
+    let factory = CryptoFactory::new(&*signing_context);
+    factory.new_signer(&private_key)
+}
+
+
 #[track_caller]
 #[cfg(all(test, feature = "integration-testing"))]
 fn execute_failure(
@@ -1546,19 +1563,7 @@ fn execute_failure(
 ) {
     let command = command.to_generic_command();
     let payload_bytes = serde_cbor::to_vec(&command).unwrap();
-
-    let home = std::env::var("HOME").unwrap();
-    let private_key_file_name = format!("{}/.sawtooth/keys/testing.priv", home);
-
-    // TODO: read keys via command line args
-    let mut private_key_file = File::open(private_key_file_name).unwrap();
-    let mut private_key_hex = String::new();
-    private_key_file.read_to_string(&mut private_key_hex).unwrap();
-
-    let private_key = Secp256k1PrivateKey::from_hex(private_key_hex.trim()).unwrap();
-    let signing_context = create_context("secp256k1").unwrap();
-    let factory = CryptoFactory::new(&*signing_context);
-    let signer = factory.new_signer(&private_key);
+    let signer = signer_from_file("testing");
 
     // build transaction
     let mut txn_header = TransactionHeader::new();
