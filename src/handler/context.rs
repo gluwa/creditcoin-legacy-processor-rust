@@ -1,15 +1,20 @@
 use std::{iter::repeat, mem};
 
-use crate::handler::{constants::SETTINGS_NAMESPACE, types::CCApplyError};
+use crate::{
+    ext::IntegerExt,
+    handler::{constants::SETTINGS_NAMESPACE, types::CCApplyError},
+};
 
 use super::{
-    constants::{EXTERNAL_GATEWAY_TIMEOUT, GATEWAY_TIMEOUT},
+    constants::{EXTERNAL_GATEWAY_TIMEOUT, GATEWAY_TIMEOUT, TX_FEE, TX_FEE_KEY},
     types::{
         CCApplyError::{InternalError, InvalidTransaction},
         Guid, SigHash, TxnResult,
     },
     utils::{self, sha512_id},
 };
+use once_cell::unsync::OnceCell;
+use rug::Integer;
 use sawtooth_sdk::{
     messages::{processor::TpProcessRequest, setting::Setting, Message},
     processor::handler::{ContextError, TransactionContext},
@@ -27,6 +32,7 @@ pub struct HandlerContext<'tx> {
     local_gateway_sock: zmq::Socket,
     gateway_endpoint: String,
     tx_ctx: &'tx dyn TransactionContext,
+    tx_fee: OnceCell<Integer>,
 }
 
 const MAX_KEY_PARTS: usize = 4;
@@ -70,6 +76,7 @@ impl<'tx> HandlerContext<'tx> {
             gateway_endpoint,
             tx_ctx,
             tip: 0,
+            tx_fee: OnceCell::new(),
         })
     }
 
@@ -125,6 +132,20 @@ impl<'tx> HandlerContext<'tx> {
             }
             Err(e) => Err(e.into()),
         }
+    }
+
+    pub fn tx_fee(&self) -> TxnResult<&Integer> {
+        self.tx_fee
+            .get_or_try_init(|| match self.get_setting(TX_FEE_KEY) {
+                Ok(Some(val)) => Integer::try_parse(&val),
+                Ok(None) => {
+                    log::debug!(
+                        "Transaction fee not set in on-chain settings, falling back to default"
+                    );
+                    Ok(TX_FEE.clone())
+                }
+                Err(e) => Err(e),
+            })
     }
 
     fn try_verify_external(&mut self, gateway_command: &str) -> TxnResult<Option<String>> {
@@ -226,6 +247,12 @@ pub mod mocked {
             pub fn get_setting(&self, key: &str) -> TxnResult<Option<String>>;
 
             pub fn verify(&mut self, gateway_command: &str) -> TxnResult<()>;
+        }
+    }
+
+    impl MockHandlerContext {
+        pub fn tx_fee(&self) -> TxnResult<Integer> {
+            Ok(TX_FEE.clone())
         }
     }
 }

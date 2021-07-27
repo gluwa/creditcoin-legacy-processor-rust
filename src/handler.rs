@@ -356,7 +356,11 @@ impl TryFrom<Value> for CCCommand {
     }
 }
 
-fn charge(txn_ctx: &dyn TransactionContext, sighash: &SigHash) -> TxnResult<(WalletId, Wallet)> {
+fn charge(
+    ctx: &HandlerContext,
+    txn_ctx: &dyn TransactionContext,
+    sighash: &SigHash,
+) -> TxnResult<(WalletId, Wallet)> {
     let wallet_id = WalletId::from(sighash);
     let state_data = get_state_data(txn_ctx, &wallet_id).context("Failed to get wallet data")?;
     let mut wallet = Wallet::try_parse(&state_data)
@@ -364,7 +368,8 @@ fn charge(txn_ctx: &dyn TransactionContext, sighash: &SigHash) -> TxnResult<(Wal
     let balance = Integer::try_parse(&wallet.amount)
         .context(format!("The wallet balance for {:?} is malformed", sighash))?;
 
-    if balance < *TX_FEE {
+    let tx_fee = ctx.tx_fee()?;
+    if tx_fee.gt(&balance) {
         bail_transaction!(
             "Insufficient funds",
             context = "Wallet balance at {:?} does not cover transaction fee",
@@ -372,7 +377,7 @@ fn charge(txn_ctx: &dyn TransactionContext, sighash: &SigHash) -> TxnResult<(Wal
         );
     }
 
-    wallet.amount = (balance - &*TX_FEE).to_string_radix(10);
+    wallet.amount = (balance - tx_fee).to_string_radix(10);
     Ok((wallet_id, wallet))
 }
 
@@ -408,7 +413,7 @@ impl CCTransaction for SendFunds {
             "Failed to parse source wallet at {:?} from state data",
             src_wallet_id
         ))?;
-        let amount_plus_fee = self.amount.clone() + &*TX_FEE;
+        let amount_plus_fee = self.amount.clone() + ctx.tx_fee()?;
         let mut src_balance = Integer::try_parse(&src_wallet.amount).context(format!(
             "Failed to parse wallet balance at {:?}, found {:?}",
             src_wallet_id, &src_wallet.amount
@@ -465,7 +470,7 @@ impl CCTransaction for RegisterAddress {
 
         let my_sighash = ctx.sighash(request)?;
 
-        let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
+        let (wallet_id, wallet) = charge(ctx, tx_ctx, &my_sighash)?;
 
         let key = string!(&self.blockchain, &addr_str_lower, &self.network);
         let id = Address::with_prefix_key(ADDR, &key);
@@ -507,7 +512,7 @@ impl CCTransaction for RegisterTransfer {
             blockchain_tx_id,
         } = self;
         let my_sighash = ctx.sighash(request)?;
-        let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
+        let (wallet_id, wallet) = charge(ctx, tx_ctx, &my_sighash)?;
 
         let src_address_id;
         let dest_address_id;
@@ -638,7 +643,7 @@ impl CCTransaction for AddAskOrder {
             expiration,
         } = self;
         let my_sighash = ctx.sighash(request)?;
-        let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
+        let (wallet_id, wallet) = charge(ctx, tx_ctx, &my_sighash)?;
 
         let guid = ctx.guid(request);
 
@@ -693,7 +698,7 @@ impl CCTransaction for AddBidOrder {
     ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
-        let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
+        let (wallet_id, wallet) = charge(ctx, tx_ctx, &my_sighash)?;
 
         let guid = ctx.guid(request);
         let id = Address::with_prefix_key(BID_ORDER, &guid);
@@ -747,7 +752,7 @@ impl CCTransaction for AddOffer {
     ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
-        let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
+        let (wallet_id, wallet) = charge(ctx, tx_ctx, &my_sighash)?;
 
         let id = Address::with_prefix_key(
             OFFER,
@@ -918,7 +923,7 @@ impl CCTransaction for AddDealOrder {
         let mut wallet = crate::protos::Wallet::try_parse(&state_data)?;
 
         let mut balance = Integer::try_parse(&wallet.amount)?;
-        let fee = Integer::try_parse(&bid_order.fee)? + &*TX_FEE;
+        let fee = Integer::try_parse(&bid_order.fee)? + ctx.tx_fee()?;
         if balance < fee {
             bail_transaction!(
                 "Insufficient funds",
@@ -1050,7 +1055,7 @@ impl CCTransaction for CompleteDealOrder {
         let wallet_id = string!(NAMESPACE_PREFIX.as_str(), WALLET, my_sighash.as_str());
         let state_data = get_state_data(tx_ctx, &wallet_id)?;
 
-        let fee = Integer::try_parse(&deal_order.fee)? - &*TX_FEE;
+        let fee = Integer::try_parse(&deal_order.fee)? - ctx.tx_fee()?;
 
         let mut wallet = protos::Wallet::default();
 
@@ -1098,7 +1103,7 @@ impl CCTransaction for LockDealOrder {
     ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
-        let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
+        let (wallet_id, wallet) = charge(ctx, tx_ctx, &my_sighash)?;
 
         let state_data = get_state_data(tx_ctx, &self.deal_order_id)?;
         let mut deal_order = protos::DealOrder::try_parse(&state_data)?;
@@ -1149,7 +1154,7 @@ impl CCTransaction for CloseDealOrder {
     ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
-        let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
+        let (wallet_id, wallet) = charge(ctx, tx_ctx, &my_sighash)?;
 
         let state_data = get_state_data(tx_ctx, &self.deal_order_id)?;
 
@@ -1254,7 +1259,7 @@ impl CCTransaction for Exempt {
     ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
-        let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
+        let (wallet_id, wallet) = charge(ctx, tx_ctx, &my_sighash)?;
 
         let state_data = get_state_data(tx_ctx, &self.deal_order_id)?;
         let mut deal_order = protos::DealOrder::try_parse(&state_data)?;
@@ -1326,7 +1331,7 @@ impl CCTransaction for AddRepaymentOrder {
     ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
-        let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
+        let (wallet_id, wallet) = charge(ctx, tx_ctx, &my_sighash)?;
 
         let guid = ctx.guid(request);
 
@@ -1445,7 +1450,7 @@ impl CCTransaction for CompleteRepaymentOrder {
     ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
-        let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
+        let (wallet_id, wallet) = charge(ctx, tx_ctx, &my_sighash)?;
 
         let state_data = get_state_data(tx_ctx, &self.repayment_order_id)?;
         let mut repayment_order = protos::RepaymentOrder::try_parse(&state_data)?;
@@ -1498,7 +1503,7 @@ impl CCTransaction for CloseRepaymentOrder {
     ) -> TxnResult<()> {
         let my_sighash = ctx.sighash(request)?;
 
-        let (wallet_id, wallet) = charge(tx_ctx, &my_sighash)?;
+        let (wallet_id, wallet) = charge(ctx, tx_ctx, &my_sighash)?;
 
         let state_data = get_state_data(tx_ctx, &self.repayment_order_id)?;
         let mut repayment_order = protos::RepaymentOrder::try_parse(&state_data)?;
@@ -1942,7 +1947,7 @@ impl CCTransaction for Housekeeping {
                 let wallet_id = string!(NAMESPACE_PREFIX, WALLET, &fee.sighash);
                 let state_data = get_state_data(tx_ctx, &wallet_id)?;
                 let mut wallet = protos::Wallet::try_parse(&state_data)?;
-                wallet.amount = (Integer::try_parse(&wallet.amount)? + &*TX_FEE).to_string();
+                wallet.amount = (Integer::try_parse(&wallet.amount)? + ctx.tx_fee()?).to_string();
 
                 let mut state_data = state_data.0;
                 state_data.clear();
