@@ -4,10 +4,10 @@
 mod mocked;
 
 use mocked::{MockSettings, MockTransactionContext};
-use sawtooth_sdk::processor::TransactionProcessor;
 use sawtooth_sdk::processor::handler::ApplyError;
-use sawtooth_sdk::signing::{create_context, Context, CryptoFactory};
+use sawtooth_sdk::processor::TransactionProcessor;
 use sawtooth_sdk::signing::secp256k1::Secp256k1PrivateKey;
+use sawtooth_sdk::signing::{create_context, Context, CryptoFactory};
 use serde_cbor::Value;
 
 use std::collections::BTreeMap;
@@ -1497,9 +1497,7 @@ impl Default for CCTransactionHandler {
 
 // TODO: replace with hex::encode() after PR#6 is merged
 fn to_hex_string(bytes: &Vec<u8>) -> String {
-    let strs: Vec<String> = bytes.iter()
-        .map(|b| format!("{:02x}", b))
-        .collect();
+    let strs: Vec<String> = bytes.iter().map(|b| format!("{:02x}", b)).collect();
     strs.join("")
 }
 
@@ -1543,14 +1541,14 @@ fn signer_from_file(profile: &str) -> Signer {
     // TODO: read keys via command line args
     let mut private_key_file = File::open(private_key_file_name).unwrap();
     let mut private_key_hex = String::new();
-    private_key_file.read_to_string(&mut private_key_hex).unwrap();
+    private_key_file
+        .read_to_string(&mut private_key_hex)
+        .unwrap();
 
     let private_key = Secp256k1PrivateKey::from_hex(private_key_hex.trim()).unwrap();
     let signing_context = create_context("secp256k1").unwrap();
-    let factory = CryptoFactory::new(&*signing_context);
-    factory.new_signer(&private_key)
+    Signer::new_boxed(signing_context, Box::new(private_key))
 }
-
 
 #[track_caller]
 #[cfg(all(test, feature = "integration-testing"))]
@@ -1593,9 +1591,9 @@ fn execute_failure(
     );
     txn_header.set_batcher_public_key(
         signer
-        .get_public_key()
-        .expect("Error retrieving Public Key")
-        .as_hex(),
+            .get_public_key()
+            .expect("Error retrieving Public Key")
+            .as_hex(),
     );
 
     txn_header.set_payload_sha512(to_hex_string(&sha512(&payload_bytes).to_vec()));
@@ -1655,9 +1653,7 @@ fn execute_failure(
     let response = client
         .post("http://127.0.0.1:8008/batches")
         .header("Content-Type", "application/octet-stream")
-        .body(
-            batch_list_bytes,
-        )
+        .body(batch_list_bytes)
         .send()
         .unwrap();
 
