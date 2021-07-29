@@ -3,6 +3,8 @@ use std::time::Duration;
 use once_cell::sync::Lazy;
 use rug::Integer;
 
+use super::types::BlockNum;
+
 pub const NAMESPACE: &str = "CREDITCOIN";
 pub const NAMESPACE_PREFIX_LENGTH: usize = 6;
 pub const MERKLE_ADDRESS_LENGTH: usize = 70;
@@ -23,16 +25,16 @@ pub const SETTINGS_NAMESPACE: &str = "000000";
 pub const PROCESSED_BLOCK_ID: &str = "000000000000000000000000000000000000000000000000000000000000";
 
 pub const INTEREST_MULTIPLIER: u64 = 1000000;
-pub const CONFIRMATION_COUNT: u64 = 30;
-pub const YEAR_OF_BLOCKS: u64 = 60 * 24 * 365;
+pub const CONFIRMATION_COUNT: BlockNum = BlockNum(30);
+pub const YEAR_OF_BLOCKS: BlockNum = BlockNum(60 * 24 * 365);
 
-pub const BLOCKS_IN_PERIOD_UPDATE1: u64 = 2500000;
+pub const BLOCKS_IN_PERIOD_UPDATE1: BlockNum = BlockNum(2500000);
 
-pub const BLOCK_REWARD_PROCESSING_COUNT: u64 = 10;
+pub const BLOCK_REWARD_PROCESSING_COUNT: BlockNum = BlockNum(10);
 
 pub const SKIP_TO_GET_60: usize = 512 / 8 * 2 - 60; // 512 - hash size in bits, 8 - bits in byte, 2 - hex digits for byte, 60 - merkle address length (70) without namespace length (6) and prexix length (4)
 
-pub const DEAL_EXP_FIX_BLOCK: u64 = 278890;
+pub const DEAL_EXP_FIX_BLOCK: BlockNum = BlockNum(278890);
 
 pub const GATEWAY_TIMEOUT: i32 = 5000;
 pub const EXTERNAL_GATEWAY_TIMEOUT: i32 = 25000;

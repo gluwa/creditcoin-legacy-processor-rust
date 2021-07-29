@@ -1,9 +1,9 @@
+use derive_more::{Add, AddAssign, Div, Mul};
 use std::convert::TryFrom;
 use std::fmt;
-use std::ops::Add;
 use std::ops::Deref;
-use std::ops::Div;
-use std::ops::Sub;
+use std::ops::{Add, Sub};
+use std::ops::{Div, Mul};
 
 use derive_more::{From, Into};
 use rug::integer::SmallInteger;
@@ -187,7 +187,9 @@ pub type StateVec = Vec<(String, Vec<u8>)>;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Default)]
 pub struct CurrencyAmount(pub Integer);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, From, Default, Mul, Div, Add, AddAssign,
+)]
 pub struct BlockNum(pub u64);
 
 impl BlockNum {
@@ -243,31 +245,7 @@ impl Sub<u64> for BlockNum {
         })?))
     }
 }
-impl Add<BlockNum> for BlockNum {
-    type Output = BlockNum;
 
-    fn add(self, rhs: BlockNum) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-impl Add<&BlockNum> for BlockNum {
-    type Output = BlockNum;
-
-    fn add(self, rhs: &BlockNum) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-impl Sub<&BlockNum> for BlockNum {
-    type Output = TxnResult<BlockNum>;
-
-    fn sub(self, rhs: &BlockNum) -> Self::Output {
-        Ok(Self(self.0.checked_sub(rhs.0).ok_or_else(|| {
-            CCApplyError::InvalidTransaction(
-                "The subtraction would have resulted in overflow".into(),
-            )
-        })?))
-    }
-}
 impl Sub<BlockNum> for BlockNum {
     type Output = TxnResult<BlockNum>;
 
@@ -279,16 +257,27 @@ impl Sub<BlockNum> for BlockNum {
         })?))
     }
 }
+
+impl Mul<BlockNum> for u64 {
+    type Output = BlockNum;
+
+    fn mul(self, rhs: BlockNum) -> Self::Output {
+        BlockNum(self * rhs.0)
+    }
+}
+
 impl PartialEq<u64> for BlockNum {
     fn eq(&self, other: &u64) -> bool {
         self.0 == *other
     }
 }
+
 impl PartialEq<BlockNum> for u64 {
     fn eq(&self, other: &BlockNum) -> bool {
         *self == other.0
     }
 }
+
 impl PartialOrd<u64> for BlockNum {
     fn partial_cmp(&self, other: &u64) -> Option<std::cmp::Ordering> {
         self.0.partial_cmp(other)
@@ -314,5 +303,10 @@ impl From<BlockNum> for SmallInteger {
 impl From<BlockNum> for u64 {
     fn from(value: BlockNum) -> Self {
         value.0
+    }
+}
+impl From<BlockNum> for Integer {
+    fn from(value: BlockNum) -> Self {
+        Integer::from(value.0)
     }
 }
