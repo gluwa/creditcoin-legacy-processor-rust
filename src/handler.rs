@@ -794,7 +794,7 @@ impl CCTransaction for AddOffer {
             );
         }
 
-        let elapsed = head - start;
+        let elapsed = (head - start)?;
 
         if ask_order.expiration < elapsed {
             bail_transaction!(
@@ -830,7 +830,7 @@ impl CCTransaction for AddOffer {
             );
         }
 
-        let elapsed = head - start;
+        let elapsed = (head - start)?;
 
         if bid_order.expiration < elapsed {
             bail_transaction!(
@@ -928,7 +928,7 @@ impl CCTransaction for AddDealOrder {
                 head
             );
         }
-        let elapsed = head - start;
+        let elapsed = (head - start)?;
 
         if offer.expiration < elapsed {
             bail_transaction!(
@@ -1047,7 +1047,7 @@ impl CCTransaction for CompleteDealOrder {
                 head
             );
         }
-        let elapsed = head - start;
+        let elapsed = (head - start)?;
 
         if deal_order.expiration < elapsed {
             bail_transaction!(
@@ -1277,7 +1277,7 @@ impl CCTransaction for CloseDealOrder {
         }
         let maturity = BlockNum::try_from(&deal_order.maturity)?;
 
-        let ticks = ((head - start) + &maturity) / maturity;
+        let ticks = ((head - start)? + &maturity) / maturity;
 
         let deal_amount = Integer::try_parse(&deal_order.amount)?;
         let deal_interest = Integer::try_parse(&deal_order.interest)?;
@@ -1913,7 +1913,7 @@ impl CCTransaction for Housekeeping {
 
         let tip = last_block(request);
 
-        if block_idx >= tip - CONFIRMATION_COUNT {
+        if block_idx >= (tip - CONFIRMATION_COUNT)? {
             info!("Premature processing");
             return Ok(());
         }
@@ -1922,7 +1922,7 @@ impl CCTransaction for Housekeeping {
         filter(tx_ctx, &ask, |addr, proto| {
             let ask_order = protos::AskOrder::try_parse(proto)?;
             let start = BlockNum::try_from(&ask_order.block)?;
-            let elapsed = block_idx - start;
+            let elapsed = (block_idx - start)?;
             if ask_order.expiration < elapsed {
                 tx_ctx.delete_state_entry(addr)?;
             }
@@ -1933,7 +1933,7 @@ impl CCTransaction for Housekeeping {
         filter(tx_ctx, &bid, |addr, proto| {
             let bid_order = protos::BidOrder::try_parse(proto)?;
             let start = BlockNum::try_from(&bid_order.block)?;
-            let elapsed = block_idx - start;
+            let elapsed = (block_idx - start)?;
             if bid_order.expiration < elapsed {
                 tx_ctx.delete_state_entry(addr)?;
             }
@@ -1944,7 +1944,7 @@ impl CCTransaction for Housekeeping {
         filter(tx_ctx, &offer, |addr, proto| {
             let offer = protos::Offer::try_parse(proto)?;
             let start = BlockNum::try_from(&offer.block)?;
-            let elapsed = block_idx - start;
+            let elapsed = (block_idx - start)?;
             if offer.expiration < elapsed {
                 tx_ctx.delete_state_entry(addr)?;
             }
@@ -1955,7 +1955,7 @@ impl CCTransaction for Housekeeping {
         filter(tx_ctx, &deal, |addr, proto| {
             let deal_order = protos::DealOrder::try_parse(proto)?;
             let start = BlockNum::try_from(&deal_order.block)?;
-            let elapsed = block_idx - start;
+            let elapsed = (block_idx - start)?;
             if deal_order.expiration < elapsed && deal_order.loan_transfer.is_empty() {
                 if ctx.tip() == 0 || ctx.tip() > DEAL_EXP_FIX_BLOCK {
                     let wallet_id = string!(NAMESPACE_PREFIX, WALLET, &deal_order.sighash);
@@ -1978,7 +1978,7 @@ impl CCTransaction for Housekeeping {
         filter(tx_ctx, &repay, |addr, proto| {
             let repayment_order = protos::RepaymentOrder::try_parse(proto)?;
             let start = BlockNum::try_from(&repayment_order.block)?;
-            let elapsed = block_idx - start;
+            let elapsed = (block_idx - start)?;
             if repayment_order.expiration < elapsed && repayment_order.previous_owner.is_empty() {
                 tx_ctx.delete_state_entry(addr)?;
             }
@@ -1989,7 +1989,7 @@ impl CCTransaction for Housekeeping {
         filter(tx_ctx, &fee, |addr, proto| {
             let fee = protos::Fee::try_parse(proto)?;
             let start = BlockNum::try_from(&fee.block)?;
-            let elapsed = block_idx - start;
+            let elapsed = (block_idx - start)?;
 
             if elapsed > YEAR_OF_BLOCKS {
                 let wallet_id = string!(NAMESPACE_PREFIX, WALLET, &fee.sighash);

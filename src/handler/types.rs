@@ -7,6 +7,7 @@ use std::ops::Sub;
 
 use derive_more::{From, Into};
 use rug::integer::SmallInteger;
+use rug::Integer;
 
 use sawtooth_sdk::processor::handler::ApplyError;
 use sawtooth_sdk::processor::handler::ContextError;
@@ -183,6 +184,9 @@ impl AsRef<[u8]> for State {
 
 pub type StateVec = Vec<(String, Vec<u8>)>;
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Default)]
+pub struct CurrencyAmount(pub Integer);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Default)]
 pub struct BlockNum(pub u64);
 
@@ -229,10 +233,14 @@ impl Add<u64> for BlockNum {
     }
 }
 impl Sub<u64> for BlockNum {
-    type Output = BlockNum;
+    type Output = TxnResult<BlockNum>;
 
     fn sub(self, rhs: u64) -> Self::Output {
-        Self(self.0 - rhs)
+        Ok(Self(self.0.checked_sub(rhs).ok_or_else(|| {
+            CCApplyError::InvalidTransaction(
+                "The subtraction would have resulted in overflow".into(),
+            )
+        })?))
     }
 }
 impl Add<BlockNum> for BlockNum {
@@ -250,18 +258,25 @@ impl Add<&BlockNum> for BlockNum {
     }
 }
 impl Sub<&BlockNum> for BlockNum {
-    type Output = BlockNum;
+    type Output = TxnResult<BlockNum>;
 
     fn sub(self, rhs: &BlockNum) -> Self::Output {
-        Self(self.0 - rhs.0)
+        Ok(Self(self.0.checked_sub(rhs.0).ok_or_else(|| {
+            CCApplyError::InvalidTransaction(
+                "The subtraction would have resulted in overflow".into(),
+            )
+        })?))
     }
 }
 impl Sub<BlockNum> for BlockNum {
-    type Output = BlockNum;
+    type Output = TxnResult<BlockNum>;
 
-    #[track_caller]
     fn sub(self, rhs: BlockNum) -> Self::Output {
-        Self(self.0 - rhs.0)
+        Ok(Self(self.0.checked_sub(rhs.0).ok_or_else(|| {
+            CCApplyError::InvalidTransaction(
+                "The subtraction would have resulted in overflow".into(),
+            )
+        })?))
     }
 }
 impl PartialEq<u64> for BlockNum {
