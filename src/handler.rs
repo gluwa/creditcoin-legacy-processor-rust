@@ -8,7 +8,7 @@ use crate::{
     bail_transaction,
     ext::{ErrorExt, IntegerExt, MessageExt},
     handler::utils::{
-        add_fee, get_integer, get_integer_string, get_signed_integer, get_string, get_u64,
+        add_fee, get_block_num, get_integer, get_integer_string, get_signed_integer, get_string,
         last_block,
     },
     protos, string,
@@ -23,7 +23,7 @@ use context::mocked::MockHandlerContext as HandlerContext;
 
 use constants::*;
 use log::{debug, info};
-use rug::{Assign, Integer};
+use rug::{integer::SmallInteger, Assign, Integer};
 use sawtooth_sdk::{
     messages::processor::TpProcessRequest,
     processor::handler::{ApplyError, TransactionContext, TransactionHandler},
@@ -91,7 +91,7 @@ pub struct AddAskOrder {
     interest: String,
     maturity: String,
     fee: String,
-    expiration: u64,
+    expiration: BlockNum,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
@@ -101,20 +101,20 @@ pub struct AddBidOrder {
     interest: String,
     maturity: String,
     fee: String,
-    expiration: u64,
+    expiration: BlockNum,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct AddOffer {
     ask_order_id: String,
     bid_order_id: String,
-    expiration: u64,
+    expiration: BlockNum,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct AddDealOrder {
     offer_id: String,
-    expiration: u64,
+    expiration: BlockNum,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
@@ -145,7 +145,7 @@ pub struct AddRepaymentOrder {
     deal_order_id: String,
     address_id: String,
     amount: String,
-    expiration: u64,
+    expiration: BlockNum,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
@@ -168,7 +168,7 @@ pub struct CollectCoins {
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Housekeeping {
-    block_idx: Integer,
+    block_idx: BlockNum,
 }
 
 impl TryFrom<Value> for CCCommand {
@@ -215,7 +215,7 @@ impl TryFrom<Value> for CCCommand {
                     let interest = get_integer_string(&map, "p3", "interest")?.clone();
                     let maturity = get_integer_string(&map, "p4", "maturity")?.clone();
                     let fee = get_integer_string(&map, "p5", "fee")?.clone();
-                    let expiration = get_u64(&map, "p6", "expiration")?;
+                    let expiration = get_block_num(&map, "p6", "expiration")?;
                     AddAskOrder {
                         address_id,
                         amount_str,
@@ -233,7 +233,7 @@ impl TryFrom<Value> for CCCommand {
                     let interest = get_integer_string(&map, "p3", "interest")?.clone();
                     let maturity = get_integer_string(&map, "p4", "maturity")?.clone();
                     let fee = get_integer_string(&map, "p5", "fee")?.to_owned();
-                    let expiration = get_u64(&map, "p6", "expiration")?;
+                    let expiration = get_block_num(&map, "p6", "expiration")?;
                     AddBidOrder {
                         address_id,
                         amount_str,
@@ -248,7 +248,7 @@ impl TryFrom<Value> for CCCommand {
                 "ADDOFFER" => {
                     let ask_order_id = get_string(&map, "p1", "askOrderId")?.to_lowercase();
                     let bid_order_id = get_string(&map, "p2", "bidOrderId")?.to_lowercase();
-                    let expiration = get_u64(&map, "p3", "expiration")?;
+                    let expiration = get_block_num(&map, "p3", "expiration")?;
 
                     AddOffer {
                         ask_order_id,
@@ -260,7 +260,7 @@ impl TryFrom<Value> for CCCommand {
 
                 "ADDDEALORDER" => {
                     let offer_id = get_string(&map, "p1", "offerId")?.to_lowercase();
-                    let expiration = get_u64(&map, "p2", "expiration")?;
+                    let expiration = get_block_num(&map, "p2", "expiration")?;
 
                     AddDealOrder {
                         offer_id,
@@ -311,7 +311,7 @@ impl TryFrom<Value> for CCCommand {
                     let deal_order_id = get_string(&map, "p1", "dealOrderId")?.to_lowercase();
                     let address_id = get_string(&map, "p2", "addressId")?.to_lowercase();
                     let amount = get_integer_string(&map, "p3", "amount")?.clone();
-                    let expiration = get_u64(&map, "p4", "expiration")?;
+                    let expiration = get_block_num(&map, "p4", "expiration")?;
 
                     AddRepaymentOrder {
                         deal_order_id,
@@ -341,7 +341,7 @@ impl TryFrom<Value> for CCCommand {
                 .into(),
 
                 "HOUSEKEEPING" => Housekeeping {
-                    block_idx: get_integer(&map, "p1", "blockIdx")?,
+                    block_idx: get_block_num(&map, "p1", "blockIdx")?,
                 }
                 .into(),
 
@@ -483,7 +483,7 @@ impl CCTransaction for RegisterAddress {
             );
         }
 
-        let address = crate::protos::Address {
+        let address = protos::Address {
             blockchain: self.blockchain,
             value: self.address,
             network: self.network,
@@ -548,9 +548,9 @@ impl CCTransaction for RegisterTransfer {
         }
 
         let state_data = get_state_data(tx_ctx, &src_address_id)?;
-        let src_address = crate::protos::Address::try_parse(&state_data)?;
+        let src_address = protos::Address::try_parse(&state_data)?;
         let state_data = get_state_data(tx_ctx, &dest_address_id)?;
-        let dest_address = crate::protos::Address::try_parse(&state_data)?;
+        let dest_address = protos::Address::try_parse(&state_data)?;
 
         if src_address.sighash != *my_sighash {
             bail_transaction!(
@@ -604,7 +604,7 @@ impl CCTransaction for RegisterTransfer {
             .join(" ");
             ctx.verify(&gateway_command)?;
         }
-        let transfer = crate::protos::Transfer {
+        let transfer = protos::Transfer {
             blockchain,
             src_address: src_address_id,
             dst_address: dest_address_id,
@@ -654,7 +654,7 @@ impl CCTransaction for AddAskOrder {
 
         let state_data = get_state_data(tx_ctx, &address_id)?;
 
-        let address = crate::protos::Address::try_parse(&state_data)?;
+        let address = protos::Address::try_parse(&state_data)?;
 
         if address.sighash != my_sighash.as_str() {
             bail_transaction!(
@@ -665,14 +665,14 @@ impl CCTransaction for AddAskOrder {
             );
         }
 
-        let ask_order = crate::protos::AskOrder {
+        let ask_order = protos::AskOrder {
             blockchain: address.blockchain,
             address: address_id,
             amount: amount_str,
             interest,
             maturity,
             fee,
-            expiration,
+            expiration: expiration.into(),
             block: last_block(request).to_string(),
             sighash: my_sighash.deref().clone(),
         };
@@ -709,7 +709,7 @@ impl CCTransaction for AddBidOrder {
 
         let state_data = get_state_data(tx_ctx, &self.address_id)?;
 
-        let address = crate::protos::Address::try_parse(&state_data)?;
+        let address = protos::Address::try_parse(&state_data)?;
         if address.sighash != my_sighash.as_str() {
             bail_transaction!(
                 "The address doesn't belong to the party",
@@ -719,14 +719,14 @@ impl CCTransaction for AddBidOrder {
             );
         }
 
-        let bid_order = crate::protos::BidOrder {
+        let bid_order = protos::BidOrder {
             blockchain: address.blockchain,
             address: self.address_id,
             amount: self.amount_str,
             interest: self.interest,
             maturity: self.maturity,
             fee: self.fee,
-            expiration: self.expiration,
+            expiration: self.expiration.into(),
             block: last_block(request).to_string(),
             sighash: my_sighash.clone().into(),
         };
@@ -769,7 +769,7 @@ impl CCTransaction for AddOffer {
 
         let state_data = get_state_data(tx_ctx, &self.ask_order_id)?;
 
-        let ask_order = crate::protos::AskOrder::try_parse(&state_data)?;
+        let ask_order: protos::AskOrder = protos::AskOrder::try_parse(&state_data)?;
 
         if ask_order.sighash != my_sighash.as_str() {
             bail_transaction!(
@@ -781,8 +781,20 @@ impl CCTransaction for AddOffer {
         }
 
         let head = last_block(request);
-        let start = Integer::try_parse(&ask_order.block)?;
-        let elapsed = head.clone() - start;
+        let start = BlockNum::try_from(ask_order.block.as_str())?;
+
+        if head < start {
+            bail_transaction!(
+                "The ask order has a block number greater than the chain head",
+                context =
+                    "The block number for the ask order with ID {:?} is {:?}, but the head is {:?}",
+                { self.ask_order_id },
+                start,
+                head
+            );
+        }
+
+        let elapsed = head - start;
 
         if ask_order.expiration < elapsed {
             bail_transaction!(
@@ -793,10 +805,10 @@ impl CCTransaction for AddOffer {
 
         let state_data = get_state_data(tx_ctx, &ask_order.address)?;
 
-        let src_address = crate::protos::Address::try_parse(&state_data)?;
+        let src_address = protos::Address::try_parse(&state_data)?;
 
         let state_data = get_state_data(tx_ctx, &self.bid_order_id)?;
-        let bid_order = crate::protos::BidOrder::try_parse(&state_data)?;
+        let bid_order = protos::BidOrder::try_parse(&state_data)?;
 
         if bid_order.sighash == my_sighash.as_str() {
             bail_transaction!(
@@ -805,7 +817,19 @@ impl CCTransaction for AddOffer {
             );
         }
 
-        let start = Integer::try_parse(&bid_order.block)?;
+        let start = BlockNum::try_from(&bid_order.block)?;
+
+        if head < start {
+            bail_transaction!(
+                "The bid order has a block number greater than the chain head",
+                context =
+                    "The block number for the bid order with ID {:?} is {:?}, but the head is {:?}",
+                { self.bid_order_id },
+                start,
+                head
+            );
+        }
+
         let elapsed = head - start;
 
         if bid_order.expiration < elapsed {
@@ -816,7 +840,7 @@ impl CCTransaction for AddOffer {
         }
 
         let state_data = get_state_data(tx_ctx, &bid_order.address)?;
-        let dst_address = crate::protos::Address::try_parse(&state_data)?;
+        let dst_address = protos::Address::try_parse(&state_data)?;
 
         if src_address.blockchain != dst_address.blockchain
             || src_address.network != dst_address.network
@@ -850,11 +874,11 @@ impl CCTransaction for AddOffer {
             );
         }
 
-        let offer = crate::protos::Offer {
+        let offer = protos::Offer {
             blockchain: src_address.blockchain,
             ask_order: self.ask_order_id,
             bid_order: self.bid_order_id,
-            expiration: self.expiration,
+            expiration: self.expiration.into(),
             block: last_block(request).to_string(),
             sighash: my_sighash.clone().into(),
         };
@@ -890,10 +914,20 @@ impl CCTransaction for AddDealOrder {
 
         let state_data = get_state_data(tx_ctx, &self.offer_id)?;
 
-        let offer = crate::protos::Offer::try_parse(&state_data)?;
+        let offer = protos::Offer::try_parse(&state_data)?;
 
         let head = last_block(request);
-        let start = Integer::try_parse(&offer.block)?;
+        let start = BlockNum::try_from(&offer.block)?;
+        if head < start {
+            bail_transaction!(
+                "The offer has a block number greater than the tip",
+                context =
+                    "The block number for the offer with ID {:?} is {:?}, but the head is {:?}",
+                { self.offer_id },
+                start,
+                head
+            );
+        }
         let elapsed = head - start;
 
         if offer.expiration < elapsed {
@@ -904,7 +938,7 @@ impl CCTransaction for AddDealOrder {
         }
 
         let state_data = get_state_data(tx_ctx, &offer.bid_order)?;
-        let bid_order = crate::protos::BidOrder::try_parse(&state_data)?;
+        let bid_order = protos::BidOrder::try_parse(&state_data)?;
         if bid_order.sighash != my_sighash.as_str() {
             bail_transaction!(
                 "Only a fundraiser can add a deal order",
@@ -915,12 +949,12 @@ impl CCTransaction for AddDealOrder {
         }
 
         let state_data = get_state_data(tx_ctx, &offer.ask_order)?;
-        let ask_order = crate::protos::AskOrder::try_parse(&state_data)?;
+        let ask_order = protos::AskOrder::try_parse(&state_data)?;
 
         let wallet_id = string!(NAMESPACE_PREFIX.as_str(), WALLET, my_sighash.as_str());
         let state_data = get_state_data(tx_ctx, &wallet_id)?;
 
-        let mut wallet = crate::protos::Wallet::try_parse(&state_data)?;
+        let mut wallet = protos::Wallet::try_parse(&state_data)?;
 
         let mut balance = Integer::try_parse(&wallet.amount)?;
         let fee = Integer::try_parse(&bid_order.fee)? + ctx.tx_fee()?;
@@ -936,7 +970,7 @@ impl CCTransaction for AddDealOrder {
 
         wallet.amount = balance.to_string();
 
-        let deal_order = crate::protos::DealOrder {
+        let deal_order = protos::DealOrder {
             blockchain: offer.blockchain,
             src_address: ask_order.address,
             dst_address: bid_order.address,
@@ -944,7 +978,7 @@ impl CCTransaction for AddDealOrder {
             interest: bid_order.interest,
             maturity: bid_order.maturity,
             fee: bid_order.fee,
-            expiration: self.expiration,
+            expiration: self.expiration.into(),
             block: last_block(request).to_string(),
             sighash: my_sighash.clone().into(),
             ..protos::DealOrder::default()
@@ -979,7 +1013,7 @@ impl CCTransaction for CompleteDealOrder {
         let my_sighash = ctx.sighash(request)?;
 
         let state_data = get_state_data(tx_ctx, &self.deal_order_id)?;
-        let mut deal_order = crate::protos::DealOrder::try_parse(&state_data)?;
+        let mut deal_order = protos::DealOrder::try_parse(&state_data)?;
 
         if !deal_order.loan_transfer.is_empty() {
             bail_transaction!(
@@ -990,7 +1024,7 @@ impl CCTransaction for CompleteDealOrder {
         }
 
         let state_data = get_state_data(tx_ctx, &deal_order.src_address)?;
-        let src_address = crate::protos::Address::try_parse(&state_data)?;
+        let src_address = protos::Address::try_parse(&state_data)?;
 
         if src_address.sighash != my_sighash.as_str() {
             bail_transaction!(
@@ -1002,8 +1036,18 @@ impl CCTransaction for CompleteDealOrder {
         }
 
         let head = last_block(request);
-        let start = Integer::try_parse(&deal_order.block)?;
-        let elapsed = head - &start;
+        let start = BlockNum::try_from(&deal_order.block)?;
+        if head < start {
+            bail_transaction!(
+                "The deal order has a block number greater than the tip",
+                context =
+                    "The block number for the deal order with ID {:?} is {:?}, but the head is {:?}",
+                { self.deal_order_id },
+                start,
+                head
+            );
+        }
+        let elapsed = head - start;
 
         if deal_order.expiration < elapsed {
             bail_transaction!(
@@ -1221,14 +1265,23 @@ impl CCTransaction for CloseDealOrder {
         let loan_transfer = protos::Transfer::try_parse(&state_data)?;
 
         let head = last_block(request);
-        let start = Integer::try_parse(&loan_transfer.block)?;
-        let maturity = Integer::try_parse(&deal_order.maturity)?;
+        let start = BlockNum::try_from(&loan_transfer.block)?;
+        if head < start {
+            bail_transaction!(
+                "The loan transfer has a block number greater than the tip",
+                context =
+                    "The block number for the loan transfer ID  is {:?}, but the head is {:?}",
+                start,
+                head
+            );
+        }
+        let maturity = BlockNum::try_from(&deal_order.maturity)?;
 
         let ticks = ((head - start) + &maturity) / maturity;
 
         let deal_amount = Integer::try_parse(&deal_order.amount)?;
         let deal_interest = Integer::try_parse(&deal_order.interest)?;
-        let amount = calc_interest(&deal_amount, &ticks, &deal_interest);
+        let amount = calc_interest(&deal_amount, &*SmallInteger::from(ticks), &deal_interest);
 
         let repay_amount = Integer::try_parse(&repayment_transfer.amount)?;
 
@@ -1424,7 +1477,7 @@ impl CCTransaction for AddRepaymentOrder {
             src_address: self.address_id,
             dst_address: deal_order.src_address,
             amount: self.amount,
-            expiration: self.expiration,
+            expiration: self.expiration.into(),
             block: last_block(request).to_string(),
             deal: self.deal_order_id,
             sighash: my_sighash.clone().into(),
@@ -1821,15 +1874,13 @@ impl CCTransaction for Housekeeping {
             PROCESSED_BLOCK_ID,
         );
         let state_data = try_get_state_data(tx_ctx, &processed_block_idx)?.unwrap_or_default();
-        let mut last_processed_block_idx = Integer::new();
-
-        if !state_data.is_empty() {
-            last_processed_block_idx.assign(Integer::try_parse(
-                str::from_utf8(&state_data).map_err(|e| {
-                    InvalidTransaction(format!("State data is not valid UTF-8 : {}", e))
-                })?,
-            )?);
-        }
+        let last_processed_block_idx = if !state_data.is_empty() {
+            BlockNum::try_from(str::from_utf8(&state_data).map_err(|e| {
+                InvalidTransaction(format!("State data is not valid UTF-8 : {}", e))
+            })?)?
+        } else {
+            BlockNum::default()
+        };
 
         if block_idx == 0 {
             let head = last_block(request);
@@ -1843,7 +1894,7 @@ impl CCTransaction for Housekeeping {
                     request,
                     tx_ctx,
                     ctx,
-                    &last_processed_block_idx,
+                    &*SmallInteger::from(last_processed_block_idx),
                     &Integer::new(),
                 )?;
                 tx_ctx.set_state_entry(
@@ -1867,14 +1918,12 @@ impl CCTransaction for Housekeeping {
             return Ok(());
         }
 
-        let mut elapsed_buf = Integer::new();
-
         let ask = string!(NAMESPACE_PREFIX, ASK_ORDER);
         filter(tx_ctx, &ask, |addr, proto| {
             let ask_order = protos::AskOrder::try_parse(proto)?;
-            let start = Integer::try_parse(&ask_order.block)?;
-            elapsed_buf.assign(&block_idx - &start);
-            if ask_order.expiration < elapsed_buf {
+            let start = BlockNum::try_from(&ask_order.block)?;
+            let elapsed = block_idx - start;
+            if ask_order.expiration < elapsed {
                 tx_ctx.delete_state_entry(addr)?;
             }
             Ok(())
@@ -1883,9 +1932,9 @@ impl CCTransaction for Housekeeping {
         let bid = string!(NAMESPACE_PREFIX, BID_ORDER);
         filter(tx_ctx, &bid, |addr, proto| {
             let bid_order = protos::BidOrder::try_parse(proto)?;
-            let start = Integer::try_parse(&bid_order.block)?;
-            elapsed_buf.assign(&block_idx - &start);
-            if bid_order.expiration < elapsed_buf {
+            let start = BlockNum::try_from(&bid_order.block)?;
+            let elapsed = block_idx - start;
+            if bid_order.expiration < elapsed {
                 tx_ctx.delete_state_entry(addr)?;
             }
             Ok(())
@@ -1894,9 +1943,9 @@ impl CCTransaction for Housekeeping {
         let offer = string!(NAMESPACE_PREFIX, OFFER);
         filter(tx_ctx, &offer, |addr, proto| {
             let offer = protos::Offer::try_parse(proto)?;
-            let start = Integer::try_parse(&offer.block)?;
-            elapsed_buf.assign(&block_idx - &start);
-            if offer.expiration < elapsed_buf {
+            let start = BlockNum::try_from(&offer.block)?;
+            let elapsed = block_idx - start;
+            if offer.expiration < elapsed {
                 tx_ctx.delete_state_entry(addr)?;
             }
             Ok(())
@@ -1905,9 +1954,9 @@ impl CCTransaction for Housekeeping {
         let deal = string!(NAMESPACE_PREFIX, DEAL_ORDER);
         filter(tx_ctx, &deal, |addr, proto| {
             let deal_order = protos::DealOrder::try_parse(proto)?;
-            let start = Integer::try_parse(&deal_order.block)?;
-            elapsed_buf.assign(&block_idx - &start);
-            if deal_order.expiration < elapsed_buf && deal_order.loan_transfer.is_empty() {
+            let start = BlockNum::try_from(&deal_order.block)?;
+            let elapsed = block_idx - start;
+            if deal_order.expiration < elapsed && deal_order.loan_transfer.is_empty() {
                 if ctx.tip() == 0 || ctx.tip() > DEAL_EXP_FIX_BLOCK {
                     let wallet_id = string!(NAMESPACE_PREFIX, WALLET, &deal_order.sighash);
                     let state_data = get_state_data(tx_ctx, &wallet_id)?;
@@ -1928,10 +1977,9 @@ impl CCTransaction for Housekeeping {
         let repay = string!(NAMESPACE_PREFIX, REPAYMENT_ORDER);
         filter(tx_ctx, &repay, |addr, proto| {
             let repayment_order = protos::RepaymentOrder::try_parse(proto)?;
-            let start = Integer::try_parse(&repayment_order.block)?;
-            elapsed_buf.assign(&block_idx - &start);
-            if repayment_order.expiration < elapsed_buf && repayment_order.previous_owner.is_empty()
-            {
+            let start = BlockNum::try_from(&repayment_order.block)?;
+            let elapsed = block_idx - start;
+            if repayment_order.expiration < elapsed && repayment_order.previous_owner.is_empty() {
                 tx_ctx.delete_state_entry(addr)?;
             }
             Ok(())
@@ -1940,10 +1988,10 @@ impl CCTransaction for Housekeeping {
         let fee = string!(NAMESPACE_PREFIX, FEE);
         filter(tx_ctx, &fee, |addr, proto| {
             let fee = protos::Fee::try_parse(proto)?;
-            let start = Integer::try_parse(&fee.block)?;
-            elapsed_buf.assign(&block_idx - &start);
+            let start = BlockNum::try_from(&fee.block)?;
+            let elapsed = block_idx - start;
 
-            if elapsed_buf > YEAR_OF_BLOCKS {
+            if elapsed > YEAR_OF_BLOCKS {
                 let wallet_id = string!(NAMESPACE_PREFIX, WALLET, &fee.sighash);
                 let state_data = get_state_data(tx_ctx, &wallet_id)?;
                 let mut wallet = protos::Wallet::try_parse(&state_data)?;
@@ -1962,7 +2010,13 @@ impl CCTransaction for Housekeeping {
             Ok(())
         })?;
 
-        reward(request, tx_ctx, ctx, &last_processed_block_idx, &block_idx)?;
+        reward(
+            request,
+            tx_ctx,
+            ctx,
+            &*SmallInteger::from(last_processed_block_idx),
+            &*SmallInteger::from(block_idx),
+        )?;
         tx_ctx.set_state_entry(processed_block_idx, block_idx.to_string().into_bytes())?;
 
         Ok(())
