@@ -1,8 +1,13 @@
+use std::convert::TryFrom;
 use std::fmt;
+use std::ops::Add;
 use std::ops::Deref;
+use std::ops::Div;
+use std::ops::Sub;
 
 use derive_more::{From, Into};
-use rug::Integer;
+use rug::integer::SmallInteger;
+
 use sawtooth_sdk::processor::handler::ApplyError;
 use sawtooth_sdk::processor::handler::ContextError;
 
@@ -178,8 +183,121 @@ impl AsRef<[u8]> for State {
 
 pub type StateVec = Vec<(String, Vec<u8>)>;
 
-// #[derive(Shrinkwrap, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From, Default)]
-// #[from(forward)]
-// pub struct BlockNum(Integer);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Default)]
+pub struct BlockNum(pub u64);
 
-pub type BlockNum = Integer;
+impl BlockNum {
+    pub fn new() -> Self {
+        Self(0)
+    }
+}
+
+impl fmt::Display for BlockNum {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl TryFrom<&str> for BlockNum {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        println!("value = {:?}", value);
+        if value.contains('-') {
+            println!("It's negative!");
+            return Err(CCApplyError::InvalidTransaction(NEGATIVE_NUMBER_ERR.into()))?;
+        }
+        Ok(BlockNum(value.parse::<u64>().map_err(|_e| {
+            anyhow::Error::from(CCApplyError::InvalidTransaction(INVALID_NUMBER_ERR.into()))
+        })?))
+    }
+}
+
+impl TryFrom<&String> for BlockNum {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &String) -> Result<Self, Self::Error> {
+        <Self as TryFrom<&str>>::try_from(&*value)
+    }
+}
+
+impl Add<u64> for BlockNum {
+    type Output = BlockNum;
+
+    fn add(self, rhs: u64) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+impl Sub<u64> for BlockNum {
+    type Output = BlockNum;
+
+    fn sub(self, rhs: u64) -> Self::Output {
+        Self(self.0 - rhs)
+    }
+}
+impl Add<BlockNum> for BlockNum {
+    type Output = BlockNum;
+
+    fn add(self, rhs: BlockNum) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+impl Add<&BlockNum> for BlockNum {
+    type Output = BlockNum;
+
+    fn add(self, rhs: &BlockNum) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+impl Sub<&BlockNum> for BlockNum {
+    type Output = BlockNum;
+
+    fn sub(self, rhs: &BlockNum) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+impl Sub<BlockNum> for BlockNum {
+    type Output = BlockNum;
+
+    #[track_caller]
+    fn sub(self, rhs: BlockNum) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+impl PartialEq<u64> for BlockNum {
+    fn eq(&self, other: &u64) -> bool {
+        self.0 == *other
+    }
+}
+impl PartialEq<BlockNum> for u64 {
+    fn eq(&self, other: &BlockNum) -> bool {
+        *self == other.0
+    }
+}
+impl PartialOrd<u64> for BlockNum {
+    fn partial_cmp(&self, other: &u64) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(other)
+    }
+}
+impl PartialOrd<BlockNum> for u64 {
+    fn partial_cmp(&self, other: &BlockNum) -> Option<std::cmp::Ordering> {
+        self.partial_cmp(&other.0)
+    }
+}
+impl Div<BlockNum> for BlockNum {
+    type Output = BlockNum;
+
+    fn div(self, rhs: BlockNum) -> Self::Output {
+        Self(self.0 / rhs.0)
+    }
+}
+impl From<BlockNum> for SmallInteger {
+    fn from(value: BlockNum) -> Self {
+        SmallInteger::from(value.0)
+    }
+}
+impl From<BlockNum> for u64 {
+    fn from(value: BlockNum) -> Self {
+        value.0
+    }
+}

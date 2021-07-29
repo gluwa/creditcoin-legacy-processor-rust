@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 use std::fmt::Write;
 
 use crate::ext::IntegerExt;
@@ -116,6 +117,11 @@ pub fn get_u64(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> TxnResult
         .map_err(|_| CCApplyError::InvalidTransaction(INVALID_NUMBER_ERR.into()).into())
 }
 
+pub fn get_block_num(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> TxnResult<BlockNum> {
+    let str_value = get_string(map, key, name)?;
+    BlockNum::try_from(str_value)
+}
+
 pub fn to_hex_string(bytes: &[u8]) -> String {
     let mut buf = String::with_capacity(2 * bytes.len());
     for b in bytes {
@@ -202,9 +208,9 @@ pub fn last_block(request: &TpProcessRequest) -> BlockNum {
     let tip = request.get_tip();
     if tip == 0 {
         log::warn!("tip was 0");
-        Integer::new()
+        BlockNum(0)
     } else {
-        Integer::from(tip - 1)
+        BlockNum(tip - 1)
     }
 }
 
@@ -252,7 +258,7 @@ pub fn add_fee(
     let fee_id = Address::with_prefix_key(super::constants::FEE, guid.as_str());
     let fee = crate::protos::Fee {
         sighash: sighash.clone().into(),
-        block: last_block(request).to_string_radix(10),
+        block: last_block(request).to_string(),
     };
     add_state(states, fee_id.into(), &fee)
 }
