@@ -2826,7 +2826,7 @@ fn housekeeping_reward_in_chain() {
 
     // Chain tip is far ahead
     let request = TpProcessRequest {
-        tip: (CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT) * 4,
+        tip: u64::from((CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT) * 4),
         ..Default::default()
     };
     let mut tx_ctx = MockTransactionContext::default();
@@ -2854,7 +2854,7 @@ fn housekeeping_reward_in_chain() {
     // housekeeping tries to get the signatures for the blocks
     // from height_start to height_end in order to issue mining rewards
     // return a dummy signer
-    for height in height_start..height_end {
+    for height in height_start.0..height_end.0 {
         let signer = format!("signer{}", height);
         signers.push(signer.clone());
         expect!(tx_ctx,
@@ -2892,7 +2892,7 @@ fn housekeeping_reward_in_chain() {
     // which in this case is height_end - 1
     expect!(tx_ctx, set_state_entry(
             addr if addr == PROCESSED_BLOCK_IDX.as_str(),
-            state if state == &(height_end - 1).to_string().into_bytes()
+            state if state == &(height_end - 1).unwrap().to_string().into_bytes()
         ) -> Ok(())
     );
 
@@ -2913,7 +2913,7 @@ fn housekeeping_reward_fork() {
 
     // Chain tip is far ahead
     let request = TpProcessRequest {
-        tip: last_processed * 4,
+        tip: u64::from(last_processed * 4),
         block_signature: "headblocksig".into(),
         ..Default::default()
     };
@@ -2942,7 +2942,7 @@ fn housekeeping_reward_fork() {
 
     log::warn!("{}..{}", last_pred, first_pred);
 
-    let signers: Vec<String> = (last_pred..first_pred)
+    let signers: Vec<String> = (last_pred.0..first_pred.0)
         .map(|i| format!("signer{}", i))
         .collect();
 
@@ -3019,7 +3019,7 @@ fn housekeeping_not_enough_confirmations() {
     // Chain tip is not quite at the threshold for running because
     // the blocks have not yet gotten enough confirmations
     let request = TpProcessRequest {
-        tip: BLOCK_REWARD_PROCESSING_COUNT + 1,
+        tip: u64::from(BLOCK_REWARD_PROCESSING_COUNT + 1),
         block_signature: "headblocksig".into(),
         ..Default::default()
     };
@@ -3053,7 +3053,9 @@ fn housekeeping_within_block_reward_count() {
     // Chain tip is not quite at the threshold for running because
     // fewer than BLOCK_REWARD_PROCESSING_COUNT additional blocks have been processed
     let request = TpProcessRequest {
-        tip: last_processed + BLOCK_REWARD_PROCESSING_COUNT - 1,
+        tip: (last_processed + BLOCK_REWARD_PROCESSING_COUNT.0 - 1)
+            .unwrap()
+            .into(),
         block_signature: "headblocksig".into(),
         ..Default::default()
     };

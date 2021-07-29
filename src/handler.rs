@@ -1277,7 +1277,7 @@ impl CCTransaction for CloseDealOrder {
         }
         let maturity = BlockNum::try_from(&deal_order.maturity)?;
 
-        let ticks = ((head - start)? + &maturity) / maturity;
+        let ticks = ((head - start)? + maturity) / maturity;
 
         let deal_amount = Integer::try_parse(&deal_order.amount)?;
         let deal_interest = Integer::try_parse(&deal_order.interest)?;
@@ -1709,7 +1709,7 @@ impl CCTransaction for CollectCoins {
 fn award(
     tx_ctx: &dyn TransactionContext,
     new_formula: bool,
-    block_idx: &Integer,
+    block_idx: BlockNum,
     signer: &str,
 ) -> TxnResult<()> {
     let mut buf = Integer::new();
@@ -1717,7 +1717,7 @@ fn award(
 
     if new_formula {
         let mut reward = Integer::new();
-        buf.assign(block_idx / BLOCKS_IN_PERIOD_UPDATE1);
+        buf.assign((block_idx / BLOCKS_IN_PERIOD_UPDATE1).0);
 
         let period = buf.to_i32().ok_or_else(|| {
             InvalidTransaction("Block number is too large to fit in an i32".into())
@@ -1779,65 +1779,56 @@ fn reward(
     request: &TpProcessRequest,
     tx_ctx: &dyn TransactionContext,
     ctx: &mut HandlerContext,
-    processed_block_idx: &Integer,
-    up_to_block_idx: &Integer,
+    processed_block_idx: BlockNum,
+    up_to_block_idx: BlockNum,
 ) -> TxnResult<()> {
     info!("rewarding!");
-    assert!(up_to_block_idx == &0 || up_to_block_idx > processed_block_idx);
+    assert!(up_to_block_idx == 0 || up_to_block_idx > processed_block_idx);
 
     let mut new_formula = false;
 
     // TODO: transitioning
     let s = ctx.get_setting("sawtooth.validator.update1")?;
     if let Some(val) = s {
-        let update_block = Integer::try_parse(&*val)?;
-        if update_block + 500 < *processed_block_idx {
+        let update_block = BlockNum::try_from(&val)?;
+        if update_block + BlockNum(500) < processed_block_idx {
             new_formula = true;
         }
     }
 
-    let mut last_block_idx = Integer::new();
-    if *up_to_block_idx == 0 {
-        last_block_idx.assign(processed_block_idx + BLOCK_REWARD_PROCESSING_COUNT)
+    let last_block_idx = if up_to_block_idx == 0 {
+        processed_block_idx + BLOCK_REWARD_PROCESSING_COUNT
     } else {
-        last_block_idx.assign(up_to_block_idx)
-    }
+        up_to_block_idx
+    };
 
     let sig = request.get_block_signature();
 
     if sig.is_empty() {
-        let mut i = Integer::from(processed_block_idx + 1);
+        let mut i = processed_block_idx + BlockNum(1);
 
         while i <= last_block_idx {
-            let height = i.to_u64().ok_or_else(|| {
-                InvalidTransaction("Block number is too large to fit in a u64".into())
-            })?;
+            let height = i;
 
-            let signer = tx_ctx.get_sig_by_num(height)?;
+            let signer = tx_ctx.get_sig_by_num(height.into())?;
 
             info!("rewarding signer {} for block {}", signer, height);
 
-            award(tx_ctx, new_formula, &i, &signer)?;
-            i += 1;
+            award(tx_ctx, new_formula, i, &signer)?;
+            i += BlockNum(1);
         }
     } else {
-        let first = last_block_idx.to_u64().ok_or_else(|| {
-            InvalidTransaction("Block number is too large to fit in a u64".into())
-        })?;
-        let last = Integer::from(processed_block_idx + 1)
-            .to_u64()
-            .ok_or_else(|| {
-                InvalidTransaction("Block number is too large to fit in a u64".into())
-            })?;
+        let first = last_block_idx;
+        let last = processed_block_idx + BlockNum(1);
 
-        let signatures = tx_ctx.get_reward_block_signatures(sig, first, last)?;
+        let signatures = tx_ctx.get_reward_block_signatures(sig, first.into(), last.into())?;
 
         info!("Rewarding {} signatures", signatures.len());
 
         let mut i = last_block_idx;
         for signature in &signatures {
-            award(tx_ctx, new_formula, &i, signature)?;
-            i -= 1;
+            award(tx_ctx, new_formula, i, &signature)?;
+            i = (i - BlockNum(1))?;
         }
     }
 
@@ -1890,13 +1881,7 @@ impl CCTransaction for Housekeeping {
                 + BLOCK_REWARD_PROCESSING_COUNT
                 < head
             {
-                reward(
-                    request,
-                    tx_ctx,
-                    ctx,
-                    &*SmallInteger::from(last_processed_block_idx),
-                    &Integer::new(),
-                )?;
+                reward(request, tx_ctx, ctx, last_processed_block_idx, BlockNum(0))?;
                 tx_ctx.set_state_entry(
                     processed_block_idx,
                     (last_processed_block_idx + BLOCK_REWARD_PROCESSING_COUNT)
@@ -2014,8 +1999,8 @@ impl CCTransaction for Housekeeping {
             request,
             tx_ctx,
             ctx,
-            &*SmallInteger::from(last_processed_block_idx),
-            &*SmallInteger::from(block_idx),
+            last_processed_block_idx,
+            block_idx,
         )?;
         tx_ctx.set_state_entry(processed_block_idx, block_idx.to_string().into_bytes())?;
 
