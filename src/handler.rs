@@ -1828,7 +1828,7 @@ fn reward(
 
         let mut i = last_block_idx;
         for signature in &signatures {
-            award(tx_ctx, new_formula, i, &signature)?;
+            award(tx_ctx, new_formula, i, signature)?;
             i = (i - BlockNum(1))?;
         }
     }
@@ -1877,9 +1877,7 @@ impl CCTransaction for Housekeeping {
         if block_idx == 0 {
             let head = last_block(request);
 
-            if last_processed_block_idx.clone()
-                + CONFIRMATION_COUNT * 2
-                + BLOCK_REWARD_PROCESSING_COUNT
+            if last_processed_block_idx + CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT
                 < head
             {
                 reward(request, tx_ctx, ctx, last_processed_block_idx, BlockNum(0))?;
