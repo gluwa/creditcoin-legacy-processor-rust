@@ -83,7 +83,6 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "dashmap",
  "derive_more",
  "enclose",
  "enum_dispatch",
@@ -102,7 +101,6 @@ dependencies = [
  "sawtooth-sdk-creditcoin",
  "serde",
  "serde_cbor",
- "serde_json",
  "sha2",
  "zmq",
 ]
@@ -184,16 +182,6 @@ checksum = "377c9b002a72a0b2c1a18c62e2f3864bdfea4a015e3683a96e24aa45dd6c02d1"
 dependencies = [
  "nix",
  "winapi",
-]
-
-[[package]]
-name = "dashmap"
-version = "4.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e77a43b28d0668df09411cb0bc9a8c2adc40f9a048afe863e05fd43251e8e39c"
-dependencies = [
- "cfg-if",
- "num_cpus",
 ]
 
 [[package]]
@@ -411,12 +399,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itoa"
-version = "0.4.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b71991ff56294aa922b450139ee08b3bfc70982c6b2c7562771375cf73542dd4"
-
-[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -532,16 +514,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a64b1ec5cda2586e284722486d802acf1f7dbdc623e2bfc57e65ca1cd099290"
 dependencies = [
  "autocfg",
-]
-
-[[package]]
-name = "num_cpus"
-version = "1.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05499f3756671c15885fee9034446956fff3f243d6077b91e5767df161f766b3"
-dependencies = [
- "hermit-abi",
- "libc",
 ]
 
 [[package]]
@@ -917,12 +889,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ryu"
-version = "1.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
-
-[[package]]
 name = "sawtooth-sdk-creditcoin"
 version = "0.5.1"
 source = "git+https://github.com/gluwa/sawtooth-sdk-rust?branch=dev#b8bf91423f8c2334a9f80f96df8c60d5e8b87ec2"
@@ -1006,17 +972,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "serde_json"
-version = "1.0.68"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f690853975602e1bfe1ccbf50504d67174e3bcf340f23b5ea9992e0587a52d8"
-dependencies = [
- "itoa",
- "ryu",
- "serde",
 ]
 
 [[package]]
