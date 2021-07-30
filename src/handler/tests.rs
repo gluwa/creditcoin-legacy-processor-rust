@@ -1,7 +1,7 @@
 #![cfg(all(test, feature = "mock"))]
 #![allow(non_snake_case, non_upper_case_globals)]
 
-mod mocked;
+pub mod mocked;
 
 use mocked::{MockSettings, MockTransactionContext};
 use sawtooth_sdk::processor::handler::ApplyError;
