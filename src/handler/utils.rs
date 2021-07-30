@@ -18,6 +18,7 @@ use crate::handler::constants::{
 use super::constants::INTEREST_MULTIPLIER;
 use super::constants::INVALID_NUMBER_ERR;
 use super::types::BlockNum;
+use super::types::CurrencyAmount;
 use super::types::State;
 use super::types::StateVec;
 use super::types::WalletId;
@@ -275,14 +276,18 @@ pub fn add_fee_state(
     add_state(states, wallet_id.clone().into(), wallet)
 }
 
-pub fn calc_interest(amount: &Integer, ticks: &Integer, interest: &Integer) -> Integer {
+pub fn calc_interest(
+    amount: &CurrencyAmount,
+    ticks: BlockNum,
+    interest: &CurrencyAmount,
+) -> CurrencyAmount {
     let mut total = amount.clone();
-    let mut i = Integer::from(0);
+    let mut i = BlockNum(0);
 
-    while &i < ticks {
+    while i < ticks {
         let compound = (total.clone() * interest) / INTEREST_MULTIPLIER;
         total += compound;
-        i += 1;
+        i += BlockNum(1);
     }
     total
 }
