@@ -98,7 +98,7 @@ impl<'tx> HandlerContext<'tx> {
     }
 
     fn find_setting(bytes: &[u8], key: &str) -> TxnResult<Option<String>> {
-        let setting = Setting::parse_from_bytes(&bytes).map_err(|e| {
+        let setting = Setting::parse_from_bytes(bytes).map_err(|e| {
             CCApplyError::InternalError(format!("Failed to parse setting from bytes: {}", e))
         })?;
         for entry in setting.get_entries() {
@@ -127,7 +127,7 @@ impl<'tx> HandlerContext<'tx> {
                     Ok(None)
                 } else {
                     let (_addr, value) = &state[0];
-                    Self::find_setting(&value, key)
+                    Self::find_setting(value, key)
                 }
             }
             Err(e) => Err(e.into()),
