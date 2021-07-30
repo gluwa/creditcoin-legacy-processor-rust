@@ -3,7 +3,7 @@ use std::time::Duration;
 use once_cell::sync::Lazy;
 use rug::Integer;
 
-use super::types::BlockNum;
+use super::types::{BlockNum, Credo};
 
 pub const NAMESPACE: &str = "CREDITCOIN";
 pub const NAMESPACE_PREFIX_LENGTH: usize = 6;
@@ -64,13 +64,13 @@ pub static REPAYMENT_ORDER_PREFIX: Lazy<String> = Lazy::new(|| {
 pub const TX_FEE_KEY: &str = "sawtooth.validator.fee";
 pub const TX_FEE_STRING: &str = "10000000000000000";
 
-pub static TX_FEE: Lazy<Integer> =
-    Lazy::new(|| Integer::from_str_radix(TX_FEE_STRING, 10).unwrap());
+pub static TX_FEE: Lazy<Credo> =
+    Lazy::new(|| Credo(Integer::from_str_radix(TX_FEE_STRING, 10).unwrap()));
 
 pub const REWARD_AMOUNT_STRING: &str = "222000000000000000000";
 
-pub static REWARD_AMOUNT: Lazy<Integer> =
-    Lazy::new(|| Integer::from_str_radix(REWARD_AMOUNT_STRING, 10).unwrap());
+pub static REWARD_AMOUNT: Lazy<Credo> =
+    Lazy::new(|| Credo(Integer::from_str_radix(REWARD_AMOUNT_STRING, 10).unwrap()));
 
 // Error messages
 

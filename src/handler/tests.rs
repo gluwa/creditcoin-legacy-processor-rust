@@ -26,7 +26,7 @@ use crate::handler::utils::{self, calc_interest};
 use crate::{protos, string};
 
 use super::context::mocked::MockHandlerContext;
-use super::types::{Address, BlockNum, TxnResult};
+use super::types::{Address, BlockNum, Credo, CurrencyAmount, TxnResult};
 use super::AddAskOrder;
 use super::AddBidOrder;
 use super::AddDealOrder;
@@ -415,7 +415,7 @@ fn add_ask_order_accept() {
         amount_str: 1.to_string(),
         interest: 2.to_string(),
         maturity: 3.to_string(),
-        fee: 4.to_string(),
+        fee_str: 4.to_string(),
         expiration: 5.into(),
     };
     deserialize_success(args, expected.clone());
@@ -430,7 +430,7 @@ fn add_ask_order_case_insensitive() {
         amount_str: 1.to_string(),
         interest: 2.to_string(),
         maturity: 3.to_string(),
-        fee: 4.to_string(),
+        fee_str: 4.to_string(),
         expiration: 5.into(),
     };
     deserialize_success(args, expected);
@@ -555,7 +555,7 @@ fn add_bid_order_accept() {
         amount_str: 1.to_string(),
         interest: 2.to_string(),
         maturity: 3.to_string(),
-        fee: 4.to_string(),
+        fee_str: 4.to_string(),
         expiration: 5.into(),
     };
     deserialize_success(args, expected.clone());
@@ -570,7 +570,7 @@ fn add_bid_order_case_insensitive() {
         amount_str: 1.to_string(),
         interest: 2.to_string(),
         maturity: 3.to_string(),
-        fee: 4.to_string(),
+        fee_str: 4.to_string(),
         expiration: 5.into(),
     };
     deserialize_success(args, expected);
@@ -949,7 +949,7 @@ fn add_repayment_order_accept() {
     let expected = AddRepaymentOrder {
         deal_order_id: "orderid".into(),
         address_id: "addressid".into(),
-        amount: "1".into(),
+        amount_str: "1".into(),
         expiration: 2.into(),
     };
     deserialize_success(
@@ -967,7 +967,7 @@ fn add_repayment_order_case_insensitive() {
     let expected = AddRepaymentOrder {
         deal_order_id: "orderid".into(),
         address_id: "addressid".into(),
-        amount: "1".into(),
+        amount_str: "1".into(),
         expiration: 2.into(),
     };
     deserialize_success(
@@ -1573,7 +1573,7 @@ fn register_transfer_success() {
         src_address: dst_address_id.clone(),
         dst_address: src_address_id.clone(),
         order: command.order_id.clone(),
-        amount: (command.gain.clone() + 1u64).to_string(),
+        amount: (command.gain.clone() + 1).to_string(),
         tx: command.blockchain_tx_id.clone(),
         sighash: my_sighash.to_string(),
         block: 0.to_string(),
@@ -1611,7 +1611,7 @@ fn add_ask_order_success() {
         amount_str: "1000".into(),
         interest: "10000".into(),
         maturity: "100".into(),
-        fee: "1".into(),
+        fee_str: "1".into(),
         expiration: 10000.into(),
     };
 
@@ -1655,7 +1655,7 @@ fn add_ask_order_success() {
         amount: command.amount_str.clone(),
         interest: command.interest.clone(),
         maturity: command.maturity.clone(),
-        fee: command.fee.clone(),
+        fee: command.fee_str.clone(),
         expiration: command.expiration.into(),
         block: (request.tip - 1).to_string(),
         sighash: my_sighash.to_string(),
@@ -1687,7 +1687,7 @@ fn add_bid_order_success() {
         amount_str: "1000".into(),
         interest: "10000".into(),
         maturity: "100".into(),
-        fee: "1".into(),
+        fee_str: "1".into(),
         expiration: 10000.into(),
     };
 
@@ -1731,7 +1731,7 @@ fn add_bid_order_success() {
         amount: command.amount_str.clone(),
         interest: command.interest.clone(),
         maturity: command.maturity.clone(),
-        fee: command.fee.clone(),
+        fee: command.fee_str.clone(),
         expiration: command.expiration.into(),
         block: (request.tip - 1).to_string(),
         sighash: my_sighash.to_string(),
@@ -1969,7 +1969,7 @@ fn add_deal_order_success() {
 
     // Make sure the fundraiser has enough wallet balance to cover the bid order fee + standard txn fee
     let wallet_id = WalletId::from(&my_sighash);
-    let balance = Integer::try_parse(&bid_order.fee).unwrap() + &*TX_FEE;
+    let balance = Credo::try_parse(&bid_order.fee).unwrap() + &*TX_FEE;
     expect!(tx_ctx, get balance at wallet_id -> Some(balance));
 
     // Construct the deal order
@@ -2109,7 +2109,7 @@ fn complete_deal_order_success() {
     );
 
     let wallet_id = WalletId::from(&my_sighash);
-    let fee = &*TX_FEE - Integer::try_parse(&deal_order.fee).unwrap();
+    let fee = TX_FEE.clone() - Credo::try_parse(&deal_order.fee).unwrap();
     expect!(tx_ctx, get balance at wallet_id -> Some(fee));
 
     let updated_transfer = protos::Transfer {
@@ -2445,7 +2445,7 @@ fn add_repayment_order_success() {
     let command = AddRepaymentOrder {
         deal_order_id: "dealorderid".into(),
         address_id: "buyeraddressid".into(),
-        amount: 5.to_string(),
+        amount_str: 5.to_string(),
         expiration: 10000.into(),
     };
 
@@ -2532,7 +2532,7 @@ fn add_repayment_order_success() {
         blockchain: src_address.blockchain,
         src_address: command.address_id.clone(),
         dst_address: deal_order.src_address,
-        amount: command.amount.clone(),
+        amount: command.amount_str.clone(),
         expiration: command.expiration.into(),
         block: (request.tip - 1).to_string(),
         deal: command.deal_order_id.clone(),

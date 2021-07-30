@@ -1,20 +1,16 @@
 use std::{iter::repeat, mem};
 
-use crate::{
-    ext::IntegerExt,
-    handler::{constants::SETTINGS_NAMESPACE, types::CCApplyError},
-};
+use crate::handler::{constants::SETTINGS_NAMESPACE, types::CCApplyError};
 
 use super::{
     constants::{EXTERNAL_GATEWAY_TIMEOUT, GATEWAY_TIMEOUT, TX_FEE, TX_FEE_KEY},
     types::{
         CCApplyError::{InternalError, InvalidTransaction},
-        Guid, SigHash, TxnResult,
+        Credo, Guid, SigHash, TxnResult,
     },
     utils::{self, sha512_id},
 };
 use once_cell::unsync::OnceCell;
-use rug::Integer;
 use sawtooth_sdk::{
     messages::{processor::TpProcessRequest, setting::Setting, Message},
     processor::handler::{ContextError, TransactionContext},
@@ -33,7 +29,7 @@ pub struct HandlerContext<'tx> {
     local_gateway_sock: zmq::Socket,
     gateway_endpoint: String,
     tx_ctx: &'tx dyn TransactionContext,
-    tx_fee: OnceCell<Integer>,
+    tx_fee: OnceCell<Credo>,
 }
 
 const MAX_KEY_PARTS: usize = 4;
@@ -136,10 +132,10 @@ impl<'tx> HandlerContext<'tx> {
         }
     }
 
-    pub fn tx_fee(&self) -> TxnResult<&Integer> {
+    pub fn tx_fee(&self) -> TxnResult<&Credo> {
         self.tx_fee
             .get_or_try_init(|| match self.get_setting(TX_FEE_KEY) {
-                Ok(Some(val)) => Integer::try_parse(&val),
+                Ok(Some(val)) => Credo::try_parse(&val),
                 Ok(None) => {
                     log::debug!(
                         "Transaction fee not set in on-chain settings, falling back to default"
@@ -235,6 +231,7 @@ impl<'tx> HandlerContext<'tx> {
 #[cfg(all(test, feature = "mock"))]
 pub mod mocked {
     use super::*;
+    use crate::handler::types::Credo;
     mockall::mock! {
         pub HandlerContext {
             pub fn create(
@@ -255,7 +252,7 @@ pub mod mocked {
     }
 
     impl MockHandlerContext {
-        pub fn tx_fee(&self) -> TxnResult<Integer> {
+        pub fn tx_fee(&self) -> TxnResult<Credo> {
             Ok(TX_FEE.clone())
         }
     }
