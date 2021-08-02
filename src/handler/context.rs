@@ -29,6 +29,7 @@ pub struct HandlerContext<'tx> {
     // current_state: BTreeMap<State, State>,
     tip: u64,
     gateway_context: zmq::Context,
+    #[cfg(not(all(test, feature = "mock")))]
     local_gateway_sock: zmq::Socket,
     gateway_endpoint: String,
     tx_ctx: &'tx dyn TransactionContext,
@@ -67,6 +68,7 @@ impl<'tx> HandlerContext<'tx> {
         tx_ctx: &'tx dyn TransactionContext,
     ) -> TxnResult<Self> {
         Ok(Self {
+            #[cfg(not(all(test, feature = "mock")))]
             local_gateway_sock: utils::create_socket(
                 &gateway_context,
                 &gateway_endpoint,
@@ -148,6 +150,7 @@ impl<'tx> HandlerContext<'tx> {
             })
     }
 
+    #[cfg(not(all(test, feature = "mock")))]
     fn try_verify_external(&mut self, gateway_command: &str) -> TxnResult<Option<String>> {
         log::warn!("Falling back to external gateway");
         let new_local_sock = utils::create_socket(
@@ -194,6 +197,7 @@ impl<'tx> HandlerContext<'tx> {
         }
     }
 
+    #[cfg(not(all(test, feature = "mock")))]
     pub fn verify(&mut self, gateway_command: &str) -> TxnResult<()> {
         self.local_gateway_sock
             .send(gateway_command, 0)
