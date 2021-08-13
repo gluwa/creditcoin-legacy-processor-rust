@@ -32,21 +32,21 @@ macro_rules! bail_transaction {
         )
     };
     ($s: expr) => {
-        return bail_transaction!(makeit $s)?;
+        return bail_transaction!(makeit $s)?
     };
 
     ($s: expr, context = $c: expr) => {
         use anyhow::Context;
-        return bail_transaction!(makeit $s).map_err(anyhow::Error::from).context($c);
+        return bail_transaction!(makeit $s).map_err(anyhow::Error::from).context($c)
     };
     ($s: literal, context = $c: literal, $($t2: tt),*) => {
-        bail_transaction!($s, context = format!($c, $($t2),*));
+        bail_transaction!($s, context = format!($c, $($t2),*))
     };
     ($s: literal, $($t1: tt),* context = $c: literal, $($t2: tt),*) => {
-        bail_transaction!(format!($s, $($t1),*), context = format!($c, $($t2),*));
+        bail_transaction!(format!($s, $($t1),*), context = format!($c, $($t2),*))
     };
     ($s: literal, $($t: tt),*) => {
-        bail_transaction!(makeit (format!($s, $($t),*)))?;
+        bail_transaction!(makeit (format!($s, $($t),*)))?
     };
 }
 
