@@ -121,13 +121,23 @@ impl<'tx> HandlerContext<'tx> {
             }
             Err(ContextError::AuthorizationError(_)) => {
                 log::warn!("Falling back to a client request - the settings namespace is not declared as a transaction input");
-                let state = self.tx_ctx.get_state_entries_by_prefix(&k)?;
-                if state.is_empty() {
-                    log::debug!("setting not found for key {:?}", key);
-                    Ok(None)
-                } else {
-                    let (_addr, value) = &state[0];
-                    Self::find_setting(value, key)
+                let state = self.tx_ctx.get_state_entries_by_prefix(&k);
+                match state {
+                    Ok(state) if !state.is_empty() => {
+                        let (_addr, value) = &state[0];
+                        Self::find_setting(value, key)
+                    }
+                    Ok(state) if state.is_empty() => {
+                        log::debug!("setting not found for key {:?}", key);
+                        Ok(None)
+                    }
+                    #[cfg(feature = "old-sawtooth")]
+                    Err(ContextError::ResponseAttributeError(_)) => {
+                        log::debug!("setting not found for key {:?}", key);
+                        Ok(None)
+                    }
+                    Err(e) => Err(e.into()),
+                    _ => unreachable!(),
                 }
             }
             Err(e) => Err(e.into()),
