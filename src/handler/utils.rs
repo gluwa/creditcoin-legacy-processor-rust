@@ -221,12 +221,20 @@ pub fn get_state_data<A: AsRef<str>>(
     address: A,
 ) -> TxnResult<State> {
     let address = address.as_ref();
-    let state_data = tx_ctx
-        .get_state_entry(address)
-        .map_err(CCApplyError::from)?
-        .ok_or_else(|| {
+    let state_data = match tx_ctx.get_state_entry(address) {
+        Ok(data) => data.ok_or_else(|| {
             CCApplyError::InvalidTransaction(format!("Existing state expected {}", address))
-        })?;
+        }),
+        #[cfg(feature = "old-sawtooth")]
+        Err(sawtooth_sdk::processor::handler::ContextError::AuthorizationError(s)) => {
+            log::warn!("Received authorization error from validator, most likely a misleading error message: {}", s);
+            Err(CCApplyError::InvalidTransaction(format!(
+                "Existing state expected {}",
+                address
+            )))?
+        }
+        Err(e) => Err(CCApplyError::from(e))?,
+    }?;
     Ok(state_data.into())
 }
 
