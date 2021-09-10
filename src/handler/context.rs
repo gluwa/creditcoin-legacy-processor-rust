@@ -131,7 +131,6 @@ impl<'tx> HandlerContext<'tx> {
                         log::debug!("setting not found for key {:?}", key);
                         Ok(None)
                     }
-                    #[cfg(feature = "old-sawtooth")]
                     Err(ContextError::ResponseAttributeError(_)) => {
                         log::debug!("setting not found for key {:?}", key);
                         Ok(None)

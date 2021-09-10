@@ -225,9 +225,8 @@ pub fn get_state_data<A: AsRef<str>>(
         Ok(data) => data.ok_or_else(|| {
             CCApplyError::InvalidTransaction(format!("Existing state expected {}", address))
         }),
-        #[cfg(feature = "old-sawtooth")]
         Err(sawtooth_sdk::processor::handler::ContextError::AuthorizationError(s)) => {
-            log::warn!("Received authorization error from validator, most likely a misleading error message: {}", s);
+            log::warn!("Received authorization error from validator, the address may be invalid: {}", s);
             Err(CCApplyError::InvalidTransaction(format!(
                 "Existing state expected {}",
                 address
