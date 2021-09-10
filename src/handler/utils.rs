@@ -74,12 +74,9 @@ pub fn get_string<'a>(
     name: &str,
 ) -> TxnResult<&'a String> {
     match map.get(&Value::Text(key.into())) {
+        Some(Value::Text(text)) => Ok(text),
         Some(value) => {
-            if let Value::Text(s) = value {
-                Ok(s)
-            } else {
-                bail_transaction!("Value for {} was not a string, found : {:?}", name, value)
-            }
+            bail_transaction!("Value for {} was not a string, found : {:?}", name, value)
         }
         None => {
             bail_transaction!("Expecting {}", name)
@@ -226,7 +223,10 @@ pub fn get_state_data<A: AsRef<str>>(
             CCApplyError::InvalidTransaction(format!("Existing state expected {}", address))
         }),
         Err(sawtooth_sdk::processor::handler::ContextError::AuthorizationError(s)) => {
-            log::warn!("Received authorization error from validator, the address may be invalid: {}", s);
+            log::warn!(
+                "Received authorization error from validator, the address may be invalid: {}",
+                s
+            );
             Err(CCApplyError::InvalidTransaction(format!(
                 "Existing state expected {}",
                 address
