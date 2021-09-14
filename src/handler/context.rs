@@ -132,7 +132,10 @@ impl<'tx> HandlerContext<'tx> {
                         Ok(None)
                     }
                     Err(ContextError::ResponseAttributeError(_)) => {
-                        log::debug!("setting not found for key {:?}", key);
+                        log::debug!(
+                            "received response attribute error, setting not found for key {:?}",
+                            key
+                        );
                         Ok(None)
                     }
                     Err(e) => Err(e.into()),
