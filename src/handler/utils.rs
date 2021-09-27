@@ -138,6 +138,13 @@ pub fn sha512_id<B: AsRef<[u8]>>(bytes: B) -> String {
     ret.to_owned()
 }
 
+pub fn sha512_bytes<B: AsRef<[u8]>>(bytes: B) -> Vec<u8> {
+    let mut hasher = Sha512::new();
+    hasher.update(bytes);
+    let result = hasher.finalize();
+    result.to_vec()
+}
+
 pub fn sha512<B: AsRef<[u8]>>(bytes: B) -> String {
     let mut hasher = Sha512::new();
     hasher.update(bytes);
@@ -149,7 +156,7 @@ pub fn is_hex(s: &str) -> bool {
     s.contains(|c: char| !(c.is_numeric() || ('a'..'f').contains(&c) || ('A'..'F').contains(&c)))
 }
 
-pub fn compress(uncompressed: &str) -> TxnResult<SigHash> {
+pub fn compress(uncompressed: &str) -> TxnResult<String> {
     let marker = &uncompressed[..2];
     if uncompressed.len() == 2 * (1 + 2 * 32) && is_hex(uncompressed) && marker == "04" {
         let x = &uncompressed[2..][..(2 * 32)];
@@ -164,9 +171,9 @@ pub fn compress(uncompressed: &str) -> TxnResult<SigHash> {
             compressed.push_str("02");
         }
         compressed.push_str(x);
-        Ok(SigHash(compressed))
+        Ok(compressed)
     } else if (marker == "02" || marker == "03") && uncompressed.len() == 66 {
-        Ok(SigHash(uncompressed.to_owned()))
+        Ok(uncompressed.to_owned())
     } else {
         Err(CCApplyError::InvalidTransaction(
             "Unexpected public key format".into(),
