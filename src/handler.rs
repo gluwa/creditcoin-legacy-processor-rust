@@ -14,7 +14,7 @@ use crate::{
     protos, string,
 };
 
-use anyhow::Context;
+use anyhow::Context as _;
 #[cfg(not(all(test, feature = "mock")))]
 use context::HandlerContext;
 
@@ -27,6 +27,7 @@ use rug::{Assign, Integer};
 use sawtooth_sdk::{
     messages::processor::TpProcessRequest,
     processor::handler::{ApplyError, TransactionContext, TransactionHandler},
+    signing::{secp256k1, Context},
 };
 
 use std::{convert::TryFrom, default::Default, ops::Deref};
@@ -56,6 +57,7 @@ pub enum CCCommand {
     CompleteDealOrder,
     LockDealOrder,
     CloseDealOrder,
+    RegisterDealOrder,
     Exempt,
     AddRepaymentOrder,
     CompleteRepaymentOrder,
@@ -132,6 +134,21 @@ pub struct LockDealOrder {
 pub struct CloseDealOrder {
     deal_order_id: String,
     transfer_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub struct RegisterDealOrder {
+    ask_address_id: String,
+    bid_address_id: String,
+    amount_str: String,
+    interest: String,
+    maturity: String,
+    fee_str: String,
+    expiration: BlockNum,
+    fundraiser_signature: String,
+    fundraiser_public_key: String,
+    deal_order_id: String,
+    blockchain_tx_id: String,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
@@ -1303,6 +1320,227 @@ impl CCTransaction for CloseDealOrder {
 
         Ok(())
     }
+}
+
+impl CCTransaction for RegisterDealOrder {
+    fn execute(
+        self,
+        request: &TpProcessRequest,
+        tx_ctx: &dyn TransactionContext,
+        ctx: &mut HandlerContext,
+    ) -> TxnResult<()> {
+        let my_sighash = ctx.sighash(request)?;
+
+        let fundraiser_sighash = SigHash::from_public_key(&self.fundraiser_public_key)?;
+
+        let ask_address_state_data = get_state_data(tx_ctx, &self.ask_address_id)?;
+        let ask_address = protos::Address::try_parse(&ask_address_state_data)?;
+        let bid_address_state_data = get_state_data(tx_ctx, &self.bid_address_id)?;
+        let bid_address = protos::Address::try_parse(&bid_address_state_data)?;
+
+        if ask_address.sighash == bid_address.sighash {
+            bail_transaction!(
+                "The ask and bid orders are from the same party",
+                context = "the sighashes associated with the addresses at {} and {} are identical",
+                { &self.ask_address_id },
+                { &self.bid_address_id }
+            );
+        }
+
+        if ask_address.sighash != my_sighash.as_str() {
+            bail_transaction!(
+                "Only an investor can register a deal",
+                context = "the current sighash {:?} does not match the sighash associated with the ask address at {}",
+                my_sighash,
+                { &self.ask_address_id }
+            );
+        }
+
+        let investor_sighash = my_sighash;
+
+        if ask_address.blockchain != bid_address.blockchain
+            || ask_address.network != bid_address.network
+        {
+            bail_transaction!(
+                "The ask and bid orders must be on the same blockchain and network",
+                context = "Cannot register deal order, there is a mismatch between the ask and bid addresses"
+            );
+        }
+
+        if fundraiser_sighash.as_str() != bid_address.sighash {
+            bail_transaction!(
+                "Fundraiser signature is required",
+                context = "the fundraiser sighash ({}) does not match the sighash on the bid address ({})",
+                {fundraiser_sighash},
+                {bid_address.sighash}
+            );
+        }
+
+        let public_key = secp256k1::Secp256k1PublicKey::from_hex(&self.fundraiser_public_key)
+            .map_err(|e| InvalidTransaction(e.to_string()))
+            .with_context(|| {
+                format!(
+                    "fundraiser public key {:?} is invalid",
+                    &self.fundraiser_public_key
+                )
+            })?;
+
+        let message = utils::sha512_bytes(&string!(
+            self.ask_address_id,
+            self.bid_address_id,
+            self.amount_str,
+            self.interest,
+            self.maturity,
+            self.fee_str,
+            self.expiration.to_string()
+        ));
+
+        let context = secp256k1::Secp256k1Context::new();
+        match context.verify(&self.fundraiser_signature, &message, &public_key) {
+            Ok(true) => {}
+            Ok(false) => {
+                bail_transaction!(
+                    "The parameters must be signed by fundraiser",
+                    context =
+                        "the fundraiser signature was invalid for the given parameters and public key ({:?})", {self.fundraiser_public_key}
+                );
+            }
+            Err(err) => {
+                return Err(anyhow::Error::from(InvalidTransaction(format!(
+                    "Error occurred when verifying the fundraiser signature : {}",
+                    err.to_string()
+                ))))
+                .with_context(|| {
+                    format!(
+                        "Failed to verify the signature with the public key {:?}",
+                        self.fundraiser_public_key
+                    )
+                });
+            }
+        }
+
+        let deal_order_id = Address::checked_from(&self.deal_order_id, DEAL_ORDER)?;
+
+        if try_get_state_data(tx_ctx, &deal_order_id)?.is_some() {
+            bail_transaction!(
+                "Duplicate id",
+                context = "the specified id is already associated with a deal order"
+            );
+        }
+
+        let fundraiser_wallet_id = WalletId::from(&fundraiser_sighash);
+        let mut fundraiser_wallet = get_state_data_as(tx_ctx, &fundraiser_wallet_id)?;
+        let fundraiser_wallet_amount = Credo::from_wallet(&fundraiser_wallet)?;
+        let fee = Credo::try_parse(&self.fee_str)?;
+        let total_fee = fee.clone() + ctx.tx_fee()?;
+
+        if total_fee > fundraiser_wallet_amount {
+            bail_transaction!(
+                "Insufficient funds",
+                context = "the fundraiser does not have enough funds to cover the total fee ({:?})",
+                total_fee
+            );
+        }
+
+        let transfer_id_key = string!(
+            &ask_address.blockchain,
+            &self.blockchain_tx_id,
+            &ask_address.network
+        );
+        let transfer_id = Address::with_prefix_key(TRANSFER, &transfer_id_key);
+
+        if let Some(transfer) = try_get_state_data(tx_ctx, &transfer_id)? {
+            bail_transaction!(
+                "The transaction has already been registered",
+                context = "The transfer ID {} is already associated with a transfer {:?}",
+                { transfer_id.as_str() },
+                transfer
+            );
+        }
+
+        if self.blockchain_tx_id == "0" {
+            bail_transaction!(
+                "Invalid transaction id",
+                context =
+                    "The transaction id was 0, which is invalid for a RegisterDealOrder transaction"
+            );
+        }
+
+        let gateway_command = [
+            &ask_address.blockchain,
+            "verify",
+            &ask_address.value,
+            &bid_address.value,
+            deal_order_id.as_str(),
+            &self.amount_str,
+            &self.blockchain_tx_id,
+            &ask_address.network,
+        ]
+        .join(" ");
+        ctx.verify(&gateway_command)?;
+
+        let deal_order = protos::DealOrder {
+            blockchain: ask_address.blockchain,
+            src_address: ask_address.value,
+            dst_address: bid_address.value,
+            amount: self.amount_str.clone(),
+            interest: self.interest,
+            maturity: self.maturity,
+            fee: self.fee_str,
+            expiration: self.expiration.into(),
+            block: last_block(request).to_string(),
+            sighash: fundraiser_sighash.clone().into(),
+            ..Default::default()
+        };
+
+        let transfer = protos::Transfer {
+            blockchain: deal_order.blockchain.clone(),
+            src_address: deal_order.src_address.clone(),
+            dst_address: deal_order.dst_address.clone(),
+            order: deal_order_id.clone().into(),
+            amount: self.amount_str.clone(),
+            tx: self.blockchain_tx_id,
+            block: last_block(request).to_string(),
+            processed: false,
+            sighash: investor_sighash.clone().into(),
+        };
+
+        let fundraiser_new_wallet_amount = fundraiser_wallet_amount - total_fee;
+        fundraiser_wallet.amount = fundraiser_new_wallet_amount.to_string();
+
+        let investor_wallet_id = WalletId::from(&investor_sighash);
+        let mut investor_wallet = get_state_data_as(tx_ctx, &investor_wallet_id)?;
+        let investor_wallet_amount = Credo::from_wallet(&investor_wallet)?;
+
+        investor_wallet.amount = (investor_wallet_amount + fee).to_string();
+
+        let mut states = Vec::new();
+
+        add_state(&mut states, transfer_id.into(), &transfer)?;
+        add_state(&mut states, deal_order_id.into(), &deal_order)?;
+        add_state(&mut states, investor_wallet_id.into(), &investor_wallet)?;
+        add_fee_state(
+            ctx,
+            request,
+            &fundraiser_sighash,
+            &mut states,
+            &fundraiser_wallet_id,
+            &fundraiser_wallet,
+        )?;
+
+        tx_ctx.set_state_entries(states)?;
+
+        Ok(())
+    }
+}
+
+fn get_state_data_as<P, A>(tx_ctx: &dyn TransactionContext, address: A) -> TxnResult<P>
+where
+    P: Message + Default,
+    A: AsRef<str>,
+{
+    let state_data = get_state_data(tx_ctx, address)?;
+    P::try_parse(&state_data)
 }
 
 impl CCTransaction for Exempt {

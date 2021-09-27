@@ -16,7 +16,9 @@ use sawtooth_sdk::processor::handler::ContextError;
 use crate::ext::IntegerExt;
 use crate::handler::constants::*;
 use crate::handler::utils::sha512_id;
-use crate::{protos, string};
+use crate::{bail_transaction, protos, string};
+
+use super::utils;
 
 pub type TxnResult<T, E = anyhow::Error> = std::result::Result<T, E>;
 
@@ -70,6 +72,11 @@ impl SigHash {
     pub fn to_wallet_id(&self) -> WalletId {
         let wallet_id = string!(NAMESPACE_PREFIX, WALLET, self);
         wallet_id.into()
+    }
+    pub fn from_public_key(key: &str) -> TxnResult<SigHash> {
+        let compressed = utils::compress(key)?;
+        let hash = sha512_id(compressed.as_bytes());
+        Ok(SigHash(hash))
     }
 }
 
@@ -144,6 +151,41 @@ impl Address {
         let addr = string!(NAMESPACE_PREFIX, prefix, &id);
         assert_eq!(addr.len(), MERKLE_ADDRESS_LENGTH);
         Self(addr)
+    }
+    pub fn checked_from(address: &str, prefix: &str) -> TxnResult<Self> {
+        Address::validate(address, prefix)?;
+        Ok(Address(address.to_owned()))
+    }
+    pub fn validate(address: &str, expected_prefix: &str) -> TxnResult<()> {
+        if !address.starts_with(&*NAMESPACE_PREFIX) {
+            bail_transaction!(
+                "Invalid id",
+                context = "the id {:?} must start with {}",
+                address,
+                { &*NAMESPACE_PREFIX }
+            );
+        } else if !address[NAMESPACE_PREFIX.len()..].starts_with(expected_prefix) {
+            bail_transaction!(
+                "Invalid id",
+                context = "the id {:?} must be be under the sub-namespace {}",
+                address,
+                expected_prefix
+            );
+        } else if !address.len() == 70 {
+            bail_transaction!(
+                "Invalid id",
+                context = "the id {:?} must be 70 characters long, but it is {}",
+                address,
+                { address.len() }
+            );
+        } else if !address.chars().all(|c| c.is_ascii_hexdigit()) {
+            bail_transaction!(
+                "Invalid id",
+                context = "the id {:?} must consist only of hexadecimal characters",
+                address
+            );
+        }
+        Ok(())
     }
 }
 
