@@ -1385,15 +1385,18 @@ impl CCTransaction for RegisterDealOrder {
                 )
             })?;
 
-        let message = utils::sha512_bytes(&string!(
-            self.ask_address_id,
-            self.bid_address_id,
-            self.amount_str,
-            self.interest,
-            self.maturity,
-            self.fee_str,
-            self.expiration.to_string()
-        ));
+        let message = utils::sha512_bytes(
+            [
+                self.ask_address_id.clone(),
+                self.bid_address_id.clone(),
+                self.amount_str.clone(),
+                self.interest.clone(),
+                self.maturity.clone(),
+                self.fee_str.clone(),
+                self.expiration.to_string(),
+            ]
+            .join(","),
+        );
 
         let context = secp256k1::Secp256k1Context::new();
         match context.verify(&self.fundraiser_signature, &message, &public_key) {
