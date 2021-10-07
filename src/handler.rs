@@ -1431,20 +1431,6 @@ impl CCTransaction for RegisterDealOrder {
             );
         }
 
-        let fundraiser_wallet_id = WalletId::from(&fundraiser_sighash);
-        let mut fundraiser_wallet = get_state_data_as(tx_ctx, &fundraiser_wallet_id)?;
-        let fundraiser_wallet_amount = Credo::from_wallet(&fundraiser_wallet)?;
-        let fee = Credo::try_parse(&self.fee_str)?;
-        let total_fee = fee.clone() + ctx.tx_fee()?;
-
-        if total_fee > fundraiser_wallet_amount {
-            bail_transaction!(
-                "Insufficient funds",
-                context = "the fundraiser does not have enough funds to cover the total fee ({:?})",
-                total_fee
-            );
-        }
-
         let transfer_id_key = string!(
             &ask_address.blockchain,
             &self.blockchain_tx_id,
@@ -1489,7 +1475,7 @@ impl CCTransaction for RegisterDealOrder {
             amount: self.amount_str.clone(),
             interest: self.interest,
             maturity: self.maturity,
-            fee: self.fee_str,
+            fee: self.fee_str.clone(),
             expiration: self.expiration.into(),
             block: last_block(request).to_string(),
             sighash: fundraiser_sighash.clone().into(),
@@ -1508,27 +1494,51 @@ impl CCTransaction for RegisterDealOrder {
             sighash: investor_sighash.clone().into(),
         };
 
-        let fundraiser_new_wallet_amount = fundraiser_wallet_amount - total_fee;
-        fundraiser_wallet.amount = fundraiser_new_wallet_amount.to_string();
-
         let investor_wallet_id = WalletId::from(&investor_sighash);
         let mut investor_wallet = get_state_data_as(tx_ctx, &investor_wallet_id)?;
         let investor_wallet_amount = Credo::from_wallet(&investor_wallet)?;
 
-        investor_wallet.amount = (investor_wallet_amount + fee).to_string();
+        let fundraiser_wallet_id = WalletId::from(&fundraiser_sighash);
+        let mut fundraiser_wallet = get_state_data_as(tx_ctx, &fundraiser_wallet_id)?;
+        let fundraiser_wallet_amount = Credo::from_wallet(&fundraiser_wallet)?;
+        let fee = Credo::try_parse(&self.fee_str)?;
+
+        if fee > fundraiser_wallet_amount {
+            bail_transaction!(
+                "Insufficient funds",
+                context = "the fundraiser does not have enough funds to cover the order fee ({:?})",
+                fee
+            );
+        }
+
+        let fundraiser_new_wallet_amount = fundraiser_wallet_amount - fee.clone();
+        fundraiser_wallet.amount = fundraiser_new_wallet_amount.to_string();
+
+        let tx_fee = ctx.tx_fee()?;
+
+        let investor_wallet_plus_fee = investor_wallet_amount + fee;
+
+        if investor_wallet_plus_fee < tx_fee {
+            bail_transaction!(
+                "Insufficient funds",
+                context = "the investor does not have enough funds to cover the transaction fee"
+            );
+        };
+
+        investor_wallet.amount = (investor_wallet_plus_fee - tx_fee).to_string();
 
         let mut states = Vec::new();
 
         add_state(&mut states, transfer_id.into(), &transfer)?;
         add_state(&mut states, deal_order_id.into(), &deal_order)?;
-        add_state(&mut states, investor_wallet_id.into(), &investor_wallet)?;
+        add_state(&mut states, fundraiser_wallet_id.into(), &fundraiser_wallet)?;
         add_fee_state(
             ctx,
             request,
-            &fundraiser_sighash,
+            &investor_sighash,
             &mut states,
-            &fundraiser_wallet_id,
-            &fundraiser_wallet,
+            &investor_wallet_id,
+            &investor_wallet,
         )?;
 
         tx_ctx.set_state_entries(states)?;

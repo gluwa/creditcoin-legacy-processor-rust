@@ -264,6 +264,17 @@ impl Credo {
     }
 }
 
+impl<'a> PartialEq<&'a Credo> for Credo {
+    fn eq(&self, other: &&'a Credo) -> bool {
+        self.0 == other.0
+    }
+}
+impl<'a> PartialOrd<&'a Credo> for Credo {
+    fn partial_cmp(&self, other: &&'a Credo) -> Option<std::cmp::Ordering> {
+        self.partial_cmp(*other)
+    }
+}
+
 impl PartialEq<i64> for Credo {
     fn eq(&self, other: &i64) -> bool {
         self.0.eq(other)
