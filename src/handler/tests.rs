@@ -27,7 +27,6 @@ use crate::{protos, string};
 
 use super::context::mocked::MockHandlerContext;
 use super::types::{Address, BlockNum, Credo, CurrencyAmount, TxnResult};
-use super::AddAskOrder;
 use super::AddBidOrder;
 use super::AddDealOrder;
 use super::AddOffer;
@@ -42,6 +41,7 @@ use super::LockDealOrder;
 use super::RegisterAddress;
 use super::RegisterTransfer;
 use super::SendFunds;
+use super::{AddAskOrder, RegisterDealOrder};
 use super::{CCTransaction, Housekeeping};
 
 use once_cell::sync::Lazy;
@@ -3073,4 +3073,164 @@ fn housekeeping_within_block_reward_count() {
 
     // execute housekeeping
     command.execute(&request, &tx_ctx, &mut ctx).unwrap();
+}
+
+const NONE: Option<protos::Wallet> = None;
+
+#[test]
+fn register_deal_order_success() {
+    init_logs();
+    let key = Box::new(
+        sawtooth_sdk::signing::secp256k1::Secp256k1PrivateKey::from_hex(
+            "b508a759f375ae5bf72662e3ccb67d5d83dbc2290346dc7c560fe35017380f64",
+        )
+        .unwrap(),
+    );
+
+    let context = Box::new(sawtooth_sdk::signing::secp256k1::Secp256k1Context::new());
+    let signer = sawtooth_sdk::signing::Signer::new_boxed(context, key);
+    let fundraiser_sighash =
+        SigHash::from_public_key(&signer.get_public_key().unwrap().as_hex()).unwrap();
+    let investor_sighash = SigHash::from("investorsighash");
+
+    let ask_address_id = "askaddress".to_owned();
+    let bid_address_id = "bidaddress".to_owned();
+    let amount_str = "1".to_owned();
+    let interest = "1".to_owned();
+    let maturity = "1".to_owned();
+    let fee_str = "1".to_owned();
+    let expiration: BlockNum = 1000.into();
+
+    let signature = [
+        ask_address_id.clone(),
+        bid_address_id.clone(),
+        amount_str.clone(),
+        interest.clone(),
+        maturity.clone(),
+        fee_str.clone(),
+        expiration.to_string(),
+    ]
+    .join(",");
+
+    let fundraiser_signature = signer
+        .sign(&utils::sha512_bytes(signature.as_bytes()))
+        .unwrap();
+
+    let deal_order_id = [NAMESPACE_PREFIX.clone().as_str(), DEAL_ORDER].join("");
+
+    let command = RegisterDealOrder {
+        ask_address_id: ask_address_id.clone(),
+        bid_address_id: bid_address_id.clone(),
+        amount_str: amount_str.clone(),
+        interest: interest.clone(),
+        maturity: maturity.clone(),
+        fee_str: fee_str.clone(),
+        expiration: expiration.clone(),
+        fundraiser_signature,
+        fundraiser_public_key: signer.get_public_key().unwrap().as_hex(),
+        deal_order_id: deal_order_id.clone(),
+        blockchain_tx_id: "txid".into(),
+    };
+
+    let ask_address = protos::Address {
+        blockchain: "ethereum".into(),
+        value: "investor_address".into(),
+        network: "rinkeby".into(),
+        sighash: investor_sighash.clone().into(),
+    };
+
+    let bid_address = protos::Address {
+        sighash: fundraiser_sighash.clone().into(),
+        ..ask_address.clone()
+    };
+
+    let request = TpProcessRequest {
+        tip: 2,
+        ..Default::default()
+    };
+
+    let mut tx_ctx = MockTransactionContext::default();
+    let mut ctx = MockHandlerContext::default();
+
+    expect_get_state_entry(&mut tx_ctx, command.deal_order_id.as_str(), NONE, None);
+
+    expect_get_state_entry(
+        &mut tx_ctx,
+        command.ask_address_id.clone(),
+        Some(ask_address.clone()),
+        None,
+    );
+
+    expect_get_state_entry(
+        &mut tx_ctx,
+        command.bid_address_id.clone(),
+        Some(bid_address.clone()),
+        None,
+    );
+
+    let transfer_id_key = [
+        ask_address.blockchain.clone(),
+        command.blockchain_tx_id.clone(),
+        ask_address.network.clone(),
+    ]
+    .join("");
+
+    let transfer_id = Address::with_prefix_key(TRANSFER, &transfer_id_key);
+
+    expect_get_state_entry(&mut tx_ctx, transfer_id.clone(), NONE, None);
+
+    let guid = Guid::from("guid");
+    expect!(ctx, sighash -> investor_sighash);
+    expect!(ctx, guid -> guid);
+
+    let wallet_id = investor_sighash.to_wallet_id();
+
+    let fundraiser_wallet_id = fundraiser_sighash.to_wallet_id();
+
+    let fee = TX_FEE.clone();
+
+    expect!(tx_ctx, get balance at wallet_id -> Some(fee));
+    expect!(tx_ctx, get balance at fundraiser_wallet_id -> Some(1));
+    expect!(ctx, verify(_) -> Ok(()));
+
+    let deal_order = protos::DealOrder {
+        blockchain: ask_address.blockchain.clone(),
+        src_address: ask_address.value.clone(),
+        dst_address: bid_address.value.clone(),
+        amount: amount_str.clone(),
+        interest: interest.clone(),
+        maturity: maturity.clone(),
+        fee: fee_str.clone(),
+        expiration: 1000,
+        block: 1.to_string(),
+        sighash: fundraiser_sighash.clone().into(),
+        ..Default::default()
+    };
+    let transfer = protos::Transfer {
+        blockchain: deal_order.blockchain.clone(),
+        src_address: deal_order.src_address.clone(),
+        dst_address: deal_order.dst_address.clone(),
+        order: deal_order_id.clone().into(),
+        amount: amount_str.clone(),
+        processed: false,
+        block: 1.to_string(),
+        sighash: investor_sighash.clone().into(),
+        tx: command.blockchain_tx_id.clone(),
+    };
+
+    expect_set_state_entries(
+        &mut tx_ctx,
+        vec![
+            (wallet_id.to_string(), wallet_with(Some(1)).unwrap()),
+            (
+                fundraiser_wallet_id.to_string(),
+                wallet_with(Some(0)).unwrap(),
+            ),
+            (deal_order_id.to_string(), deal_order.to_bytes()),
+            (transfer_id.to_string(), transfer.to_bytes()),
+            make_fee(&guid, &investor_sighash, Some(1)),
+        ],
+    );
+
+    execute_success(command, &request, &tx_ctx, &mut ctx);
 }
