@@ -171,7 +171,9 @@ impl Address {
                 address,
                 expected_prefix
             );
-        } else if !address.len() == 70 {
+        } else if address.len() != 70 {
+            println!("Bad {:?}", address);
+
             bail_transaction!(
                 "Invalid id",
                 context = "the id {:?} must be 70 characters long, but it is {}",

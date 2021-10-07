@@ -3116,7 +3116,12 @@ fn register_deal_order_success() {
         .sign(&utils::sha512_bytes(signature.as_bytes()))
         .unwrap();
 
-    let deal_order_id = [NAMESPACE_PREFIX.clone().as_str(), DEAL_ORDER].join("");
+    let deal_order_id = [
+        NAMESPACE_PREFIX.clone().as_str(),
+        DEAL_ORDER,
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefbeef",
+    ]
+    .join("");
 
     let command = RegisterDealOrder {
         ask_address_id: ask_address_id.clone(),
