@@ -362,6 +362,37 @@ impl TryFrom<Value> for CCCommand {
                 }
                 .into(),
 
+                "REGISTERDEALORDER" => {
+                    let ask_address_id = get_string(&map, "p1", "askAddressId")?.to_lowercase();
+                    let bid_address_id = get_string(&map, "p2", "bidAddressId")?.to_lowercase();
+                    let amount_str = get_integer_string(&map, "p3", "amount")?.clone();
+                    let interest = get_integer_string(&map, "p4", "interest")?.clone();
+                    let maturity = get_integer_string(&map, "p5", "maturity")?.clone();
+                    let fee_str = get_integer_string(&map, "p6", "fee")?.to_owned();
+                    let expiration = get_block_num(&map, "p7", "expiration")?;
+                    let fundraiser_signature =
+                        get_string(&map, "p8", "fundraiserSignature")?.clone();
+                    let fundraiser_public_key =
+                        get_string(&map, "p9", "fundraiserPublicKey")?.clone();
+                    let deal_order_id = get_string(&map, "p10", "dealOrderId")?.to_lowercase();
+                    let blockchain_tx_id =
+                        get_string(&map, "p11", "blockchainTxId")?.to_lowercase();
+                    RegisterDealOrder {
+                        ask_address_id,
+                        bid_address_id,
+                        amount_str,
+                        interest,
+                        maturity,
+                        fee_str,
+                        expiration,
+                        fundraiser_signature,
+                        fundraiser_public_key,
+                        deal_order_id,
+                        blockchain_tx_id,
+                    }
+                    .into()
+                }
+
                 _ => bail_transaction!("Invalid verb in parameters: {:?}", verb),
             })
         } else {
