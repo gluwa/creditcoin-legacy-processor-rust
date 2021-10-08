@@ -1416,11 +1416,15 @@ impl CCTransaction for RegisterDealOrder {
                 )
             })?;
 
+        let first_three = [
+            self.ask_address_id.as_str(),
+            self.bid_address_id.as_str(),
+            self.amount_str.as_str(),
+        ]
+        .join("");
         let message = utils::sha512_bytes(
             [
-                self.ask_address_id.clone(),
-                self.bid_address_id.clone(),
-                self.amount_str.clone(),
+                first_three,
                 self.interest.clone(),
                 self.maturity.clone(),
                 self.fee_str.clone(),

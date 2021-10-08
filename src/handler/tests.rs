@@ -3456,10 +3456,14 @@ fn register_deal_order_success() {
     let fee_str = "1".to_owned();
     let expiration: BlockNum = 1000.into();
 
-    let signature = [
+    let first_three = [
         ask_address_id.clone(),
         bid_address_id.clone(),
         amount_str.clone(),
+    ]
+    .join("");
+    let signature = [
+        first_three,
         interest.clone(),
         maturity.clone(),
         fee_str.clone(),
