@@ -233,6 +233,11 @@ command!(Three, P1, P2, P3);
 command!(Four, P1, P2, P3, P4);
 command!(Five, P1, P2, P3, P4, P5);
 command!(Six, P1, P2, P3, P4, P5, P6);
+command!(Seven, P1, P2, P3, P4, P5, P6, P7);
+command!(Eight, P1, P2, P3, P4, P5, P6, P7, P8);
+command!(Nine, P1, P2, P3, P4, P5, P6, P7, P8, P9);
+command!(Ten, P1, P2, P3, P4, P5, P6, P7, P8, P9, P10);
+command!(Eleven, P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11);
 
 #[track_caller]
 fn deserialize_success(value: impl Serialize, expected: impl Into<CCCommand>) {
@@ -1199,6 +1204,356 @@ fn housekeeping_invalid_block_idx() {
 #[test]
 fn housekeeping_rejects_missing_arg() {
     deserialize_failure(ZeroArgCommand::new("Housekeeping"), "Expecting blockIdx");
+}
+
+// RegisterDealOrder
+
+#[test]
+fn register_deal_order_accept() {
+    deserialize_success(
+        ElevenArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "1",
+            "1",
+            "1",
+            "1",
+            "signature",
+            "pubkey",
+            "dealorderid",
+            "txid",
+        ),
+        CCCommand::RegisterDealOrder(RegisterDealOrder {
+            ask_address_id: "askaddress".into(),
+            bid_address_id: "bidaddress".into(),
+            amount_str: "1".into(),
+            interest: "1".into(),
+            maturity: "1".into(),
+            fee_str: "1".into(),
+            expiration: 1.into(),
+            fundraiser_signature: "signature".into(),
+            fundraiser_public_key: "pubkey".into(),
+            deal_order_id: "dealorderid".into(),
+            blockchain_tx_id: "txid".into(),
+        }),
+    );
+}
+
+#[test]
+fn register_deal_order_negative_amount_str() {
+    deserialize_failure(
+        ElevenArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "-1",
+            "1",
+            "1",
+            "1",
+            "1",
+            "signature",
+            "pubkey",
+            "dealorderid",
+            "txid",
+        ),
+        NEGATIVE_NUMBER_ERR,
+    );
+}
+
+#[test]
+fn register_deal_order_invalid_amount_str() {
+    deserialize_failure(
+        ElevenArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "BAD",
+            "1",
+            "1",
+            "1",
+            "1",
+            "signature",
+            "pubkey",
+            "dealorderid",
+            "txid",
+        ),
+        INVALID_NUMBER_FORMAT_ERR,
+    );
+}
+
+#[test]
+fn register_deal_order_negative_interest() {
+    deserialize_failure(
+        ElevenArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "-1",
+            "1",
+            "1",
+            "1",
+            "signature",
+            "pubkey",
+            "dealorderid",
+            "txid",
+        ),
+        NEGATIVE_NUMBER_ERR,
+    );
+}
+
+#[test]
+fn register_deal_order_invalid_interest() {
+    deserialize_failure(
+        ElevenArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "BAD",
+            "1",
+            "1",
+            "1",
+            "signature",
+            "pubkey",
+            "dealorderid",
+            "txid",
+        ),
+        INVALID_NUMBER_FORMAT_ERR,
+    );
+}
+
+#[test]
+fn register_deal_order_negative_maturity() {
+    deserialize_failure(
+        ElevenArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "1",
+            "-1",
+            "1",
+            "1",
+            "signature",
+            "pubkey",
+            "dealorderid",
+            "txid",
+        ),
+        NEGATIVE_NUMBER_ERR,
+    );
+}
+
+#[test]
+fn register_deal_order_invalid_maturity() {
+    deserialize_failure(
+        ElevenArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "1",
+            "BAD",
+            "1",
+            "1",
+            "signature",
+            "pubkey",
+            "dealorderid",
+            "txid",
+        ),
+        INVALID_NUMBER_FORMAT_ERR,
+    );
+}
+
+#[test]
+fn register_deal_order_negative_fee_str() {
+    deserialize_failure(
+        ElevenArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "1",
+            "1",
+            "-1",
+            "1",
+            "signature",
+            "pubkey",
+            "dealorderid",
+            "txid",
+        ),
+        NEGATIVE_NUMBER_ERR,
+    );
+}
+
+#[test]
+fn register_deal_order_invalid_fee_str() {
+    deserialize_failure(
+        ElevenArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "1",
+            "1",
+            "BAD",
+            "1",
+            "signature",
+            "pubkey",
+            "dealorderid",
+            "txid",
+        ),
+        INVALID_NUMBER_FORMAT_ERR,
+    );
+}
+
+#[test]
+fn register_deal_order_negative_expiration() {
+    deserialize_failure(
+        ElevenArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "1",
+            "1",
+            "1",
+            "-1",
+            "signature",
+            "pubkey",
+            "dealorderid",
+            "txid",
+        ),
+        NEGATIVE_NUMBER_ERR,
+    );
+}
+
+#[test]
+fn register_deal_order_invalid_expiration() {
+    deserialize_failure(
+        ElevenArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "1",
+            "1",
+            "1",
+            "BAD",
+            "signature",
+            "pubkey",
+            "dealorderid",
+            "txid",
+        ),
+        INVALID_NUMBER_ERR,
+    );
+}
+
+#[test]
+fn register_deal_order_rejects_missing_arg() {
+    deserialize_failure(
+        TenArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "1",
+            "1",
+            "1",
+            "1",
+            "signature",
+            "pubkey",
+            "dealorderid",
+        ),
+        "Expecting blockchainTxId",
+    );
+    deserialize_failure(
+        NineArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "1",
+            "1",
+            "1",
+            "1",
+            "signature",
+            "pubkey",
+        ),
+        "Expecting dealOrderId",
+    );
+    deserialize_failure(
+        EightArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "1",
+            "1",
+            "1",
+            "1",
+            "signature",
+        ),
+        "Expecting fundraiserPublicKey",
+    );
+    deserialize_failure(
+        SevenArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "1",
+            "1",
+            "1",
+            "1",
+        ),
+        "Expecting fundraiserSignature",
+    );
+    deserialize_failure(
+        SixArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "1",
+            "1",
+            "1",
+        ),
+        "Expecting expiration",
+    );
+    deserialize_failure(
+        FiveArgCommand::new(
+            "RegisterDealOrder",
+            "askaddress",
+            "bidaddress",
+            "1",
+            "1",
+            "1",
+        ),
+        "Expecting fee",
+    );
+    deserialize_failure(
+        FourArgCommand::new("RegisterDealOrder", "askaddress", "bidaddress", "1", "1"),
+        "Expecting maturity",
+    );
+    deserialize_failure(
+        ThreeArgCommand::new("RegisterDealOrder", "askaddress", "bidaddress", "1"),
+        "Expecting interest",
+    );
+    deserialize_failure(
+        TwoArgCommand::new("RegisterDealOrder", "askaddress", "bidaddress"),
+        "Expecting amount",
+    );
+    deserialize_failure(
+        OneArgCommand::new("RegisterDealOrder", "askaddress"),
+        "Expecting bidAddressId",
+    );
+    deserialize_failure(
+        ZeroArgCommand::new("RegisterDealOrder"),
+        "Expecting askAddressId",
+    );
 }
 
 fn make_fee(guid: &Guid, sighash: &SigHash, block: Option<u64>) -> (String, Vec<u8>) {
