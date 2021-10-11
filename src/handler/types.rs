@@ -429,7 +429,9 @@ impl TryFrom<&str> for BlockNum {
             return Err(CCApplyError::InvalidTransaction(NEGATIVE_NUMBER_ERR.into()))?;
         }
         Ok(BlockNum(value.parse::<u64>().map_err(|_e| {
-            anyhow::Error::from(CCApplyError::InvalidTransaction(INVALID_NUMBER_ERR.into()))
+            anyhow::Error::from(CCApplyError::InvalidTransaction(
+                INVALID_NUMBER_FORMAT_ERR.into(),
+            ))
         })?))
     }
 }
