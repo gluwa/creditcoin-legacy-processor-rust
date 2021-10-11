@@ -3471,9 +3471,7 @@ fn register_deal_order_success() {
     ]
     .join(",");
 
-    let fundraiser_signature = signer
-        .sign(&utils::sha512_bytes(signature.as_bytes()))
-        .unwrap();
+    let fundraiser_signature = signer.sign(&signature.as_bytes()).unwrap();
 
     let deal_order_id = [
         NAMESPACE_PREFIX.clone().as_str(),

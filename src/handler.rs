@@ -1422,19 +1422,17 @@ impl CCTransaction for RegisterDealOrder {
             self.amount_str.as_str(),
         ]
         .join("");
-        let message = utils::sha512_bytes(
-            [
-                first_three,
-                self.interest.clone(),
-                self.maturity.clone(),
-                self.fee_str.clone(),
-                self.expiration.to_string(),
-            ]
-            .join(","),
-        );
+        let message = [
+            first_three,
+            self.interest.clone(),
+            self.maturity.clone(),
+            self.fee_str.clone(),
+            self.expiration.to_string(),
+        ]
+        .join(",");
 
         let context = secp256k1::Secp256k1Context::new();
-        match context.verify(&self.fundraiser_signature, &message, &public_key) {
+        match context.verify(&self.fundraiser_signature, message.as_bytes(), &public_key) {
             Ok(true) => {}
             Ok(false) => {
                 bail_transaction!(
