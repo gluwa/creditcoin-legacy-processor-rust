@@ -517,7 +517,7 @@ fn add_ask_order_negative_expiration() {
 fn add_ask_order_invalid_expiration() {
     deserialize_failure(
         SixArgCommand::new("AddAskOrder", "addressid", 1, 2, 3, 4, "BAD"),
-        INVALID_NUMBER_ERR,
+        INVALID_NUMBER_FORMAT_ERR,
     );
 }
 
@@ -657,7 +657,7 @@ fn add_bid_order_negative_expiration() {
 fn add_bid_order_invalid_expiration() {
     deserialize_failure(
         SixArgCommand::new("AddBidOrder", "addressid", 1, 2, 3, 4, "BAD"),
-        INVALID_NUMBER_ERR,
+        INVALID_NUMBER_FORMAT_ERR,
     );
 }
 
@@ -728,7 +728,7 @@ fn add_offer_negative_expiration() {
 fn add_offer_invalid_expiration() {
     deserialize_failure(
         ThreeArgCommand::new("AddOffer", "ask", "bid", "BAD"),
-        INVALID_NUMBER_ERR,
+        INVALID_NUMBER_FORMAT_ERR,
     );
 }
 
@@ -781,7 +781,7 @@ fn add_deal_order_negative_expiration() {
 fn add_deal_order_invalid_expiration() {
     deserialize_failure(
         TwoArgCommand::new("AddDealOrder", "offerid", "BAD"),
-        INVALID_NUMBER_ERR,
+        INVALID_NUMBER_FORMAT_ERR,
     );
 }
 
@@ -1001,7 +1001,7 @@ fn add_repayment_order_invalid_amount() {
 fn add_repayment_order_invalid_expiration() {
     deserialize_failure(
         FourArgCommand::new("AddRepaymentOrder", "orderid", "addressid", 1, "BAD"),
-        INVALID_NUMBER_ERR,
+        INVALID_NUMBER_FORMAT_ERR,
     );
 }
 
@@ -1197,7 +1197,7 @@ fn housekeeping_negative_block_idx() {
 fn housekeeping_invalid_block_idx() {
     deserialize_failure(
         OneArgCommand::new("Housekeeping", "BAD"),
-        INVALID_NUMBER_ERR,
+        INVALID_NUMBER_FORMAT_ERR,
     );
 }
 
@@ -1447,7 +1447,7 @@ fn register_deal_order_invalid_expiration() {
             "dealorderid",
             "txid",
         ),
-        INVALID_NUMBER_ERR,
+        INVALID_NUMBER_FORMAT_ERR,
     );
 }
 

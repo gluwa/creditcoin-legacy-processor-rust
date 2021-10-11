@@ -16,7 +16,7 @@ use crate::handler::constants::{
 };
 
 use super::constants::INTEREST_MULTIPLIER;
-use super::constants::INVALID_NUMBER_ERR;
+use super::constants::INVALID_NUMBER_FORMAT_ERR;
 use super::types::BlockNum;
 use super::types::CurrencyAmount;
 use super::types::State;
@@ -112,7 +112,7 @@ pub fn get_u64(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> TxnResult
     let str_value = get_string(map, key, name)?;
     str_value
         .parse()
-        .map_err(|_| CCApplyError::InvalidTransaction(INVALID_NUMBER_ERR.into()).into())
+        .map_err(|_| CCApplyError::InvalidTransaction(INVALID_NUMBER_FORMAT_ERR.into()).into())
 }
 
 pub fn get_block_num(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> TxnResult<BlockNum> {
