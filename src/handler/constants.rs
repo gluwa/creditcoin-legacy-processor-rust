@@ -74,6 +74,5 @@ pub static REWARD_AMOUNT: Lazy<Credo> =
 
 // Error messages
 
-pub const INVALID_NUMBER_ERR: &str = "Invalid number";
 pub const INVALID_NUMBER_FORMAT_ERR: &str = "Invalid number format";
 pub const NEGATIVE_NUMBER_ERR: &str = "Expecting a positive value";
