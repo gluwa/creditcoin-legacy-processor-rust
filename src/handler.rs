@@ -1473,7 +1473,7 @@ impl CCTransaction for RegisterDealOrder {
 
         if let Some(transfer) = try_get_state_data(tx_ctx, &transfer_id)? {
             bail_transaction!(
-                "The transaction has already been registered",
+                "The transfer has already been registered",
                 context = "The transfer ID {} is already associated with a transfer {:?}",
                 { transfer_id.as_str() },
                 transfer
@@ -1503,8 +1503,8 @@ impl CCTransaction for RegisterDealOrder {
 
         let deal_order = protos::DealOrder {
             blockchain: ask_address.blockchain,
-            src_address: ask_address.value,
-            dst_address: bid_address.value,
+            src_address: self.ask_address_id.clone(),
+            dst_address: self.bid_address_id.clone(),
             amount: self.amount_str.clone(),
             interest: self.interest,
             maturity: self.maturity,
