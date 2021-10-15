@@ -3557,8 +3557,8 @@ fn register_deal_order_success() {
 
     let deal_order = protos::DealOrder {
         blockchain: ask_address.blockchain.clone(),
-        src_address: ask_address.value.clone(),
-        dst_address: bid_address.value.clone(),
+        src_address: ask_address_id.clone(),
+        dst_address: bid_address_id.clone(),
         amount: amount_str.clone(),
         interest: interest.clone(),
         maturity: maturity.clone(),
