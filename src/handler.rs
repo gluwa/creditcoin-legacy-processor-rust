@@ -555,24 +555,20 @@ impl CCTransaction for RegisterTransfer {
                 my_sighash
             );
         }
-        let blockchain = src_address.blockchain;
-        if dest_address.blockchain != blockchain {
+        if src_address.blockchain != dest_address.blockchain
+            || src_address.network != dest_address.network
+        {
             bail_transaction!(
-                "Source and destination addresses must be on the same blockchain",
-                context = "The destination is on the blockchain {:?}, but the source is on {:?}",
+                "The ask and bid orders must be on the same blockchain and network",
+                context = "The source is {:?}/{:?} but the destination is {:?}/{:?}",
+                { src_address.blockchain },
+                { src_address.network },
                 { dest_address.blockchain },
-                blockchain
+                { dest_address.network }
             );
         }
+        let blockchain = src_address.blockchain;
         let network = src_address.network;
-        if dest_address.network != network {
-            bail_transaction!(
-                "Source and destination addresses must be on the same network",
-                context = "The destination is on the network {:?}, but the source is on {:?}",
-                { dest_address.network },
-                network
-            );
-        }
         let key = string!(&blockchain, &blockchain_tx_id, &network);
         let transfer_id = Address::with_prefix_key(TRANSFER, &key);
         let state_data = try_get_state_data(tx_ctx, &transfer_id)?;
@@ -822,7 +818,11 @@ impl CCTransaction for AddOffer {
         {
             bail_transaction!(
                 "The ask and bid orders must be on the same blockchain and network",
-                context = "Cannot add offer, there is a mismatch between the ask and bid order"
+                context = "The source is {:?}/{:?} but the destination is {:?}/{:?}",
+                { src_address.blockchain },
+                { src_address.network },
+                { dst_address.blockchain },
+                { dst_address.network }
             );
         }
 
@@ -893,7 +893,7 @@ impl CCTransaction for AddDealOrder {
 
         if offer.expiration < elapsed {
             bail_transaction!(
-                "The order has expired",
+                "The offer has expired",
                 context = "Cannot add deal order, invalid offer"
             );
         }
