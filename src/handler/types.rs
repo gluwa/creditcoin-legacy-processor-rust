@@ -527,3 +527,13 @@ impl From<BlockNum> for Integer {
         Integer::from(value.0)
     }
 }
+impl From<BlockNum> for i32 {
+    fn from(value: BlockNum) -> Self {
+        value.0 as i32
+    }
+}
+impl From<BlockNum> for String {
+    fn from(value: BlockNum) -> Self {
+        value.0.to_string()
+    }
+}
