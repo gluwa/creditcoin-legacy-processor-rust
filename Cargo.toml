@@ -28,7 +28,8 @@ rug = { version = "1.13.0", features = [
     "integer",
     "gmp-mpfr-sys",
 ], default-features = false }
-sawtooth-sdk = { package = "sawtooth-sdk-creditcoin", git = "https://github.com/gluwa/sawtooth-sdk-rust", branch = "dev" }
+#sawtooth-sdk = { package = "sawtooth-sdk-creditcoin", git = "https://github.com/gluwa/sawtooth-sdk-rust", branch = "dev" }
+sawtooth-sdk = { package = "sawtooth-sdk-creditcoin", path = "../Sawtooth-SDK-Rust" }
 serde_cbor = "0.11.1"
 serde_json = "1.0.64"
 sha2 = "0.9.5"

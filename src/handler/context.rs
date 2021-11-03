@@ -22,12 +22,6 @@ use sawtooth_sdk::{
 use sha2::{Digest, Sha256};
 
 pub struct HandlerContext<'tx> {
-    // sighash: Option<SigHash>,
-    // guid: Option<Guid>,
-    // replaying: bool,
-    // transitioning: bool,
-    // current_state: BTreeMap<State, State>,
-    tip: u64,
     gateway_context: zmq::Context,
     #[cfg(not(all(test, feature = "mock")))]
     local_gateway_sock: zmq::Socket,
@@ -77,13 +71,8 @@ impl<'tx> HandlerContext<'tx> {
             gateway_context,
             gateway_endpoint,
             tx_ctx,
-            tip: 0,
             tx_fee: OnceCell::new(),
         })
-    }
-
-    pub fn tip(&self) -> u64 {
-        self.tip
     }
 
     pub fn sighash(&self, request: &TpProcessRequest) -> TxnResult<SigHash> {
@@ -123,7 +112,7 @@ impl<'tx> HandlerContext<'tx> {
             }
             Err(ContextError::AuthorizationError(_)) => {
                 log::warn!("Falling back to a client request - the settings namespace is not declared as a transaction input");
-                let state = self.tx_ctx.get_state_entries_by_prefix(&k)?;
+                let state = self.tx_ctx.get_state_entries_by_prefix("", &k)?;
                 if state.is_empty() {
                     log::debug!("setting not found for key {:?}", key);
                     Ok(None)
