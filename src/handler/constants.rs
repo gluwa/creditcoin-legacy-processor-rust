@@ -36,6 +36,13 @@ pub const SKIP_TO_GET_60: usize = 512 / 8 * 2 - 60; // 512 - hash size in bits, 
 
 pub const DEAL_EXP_FIX_BLOCK: BlockNum = BlockNum(278890);
 
+pub const LEGACY_FORMULA_SWITCH_BLOCK1: BlockNum = BlockNum(277800);
+pub const LEGACY_FORMULA_SWITCH_BLOCK2: BlockNum = BlockNum(278910);
+pub const BLOCK_REWARD_DELAY: BlockNum = BlockNum(500);
+
+pub const LEGACY_UPDATE_BLOCK_TOP: i32 = 278904;
+pub const LEGACY_UPDATE_BLOCK_BOTTOM: i32 = 278890;
+
 pub const GATEWAY_TIMEOUT: i32 = 5000;
 pub const EXTERNAL_GATEWAY_TIMEOUT: i32 = 25000;
 
