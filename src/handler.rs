@@ -2061,9 +2061,9 @@ fn award(
 }
 
 fn reward(
+    tip: &BlockNum,
     request: &TpProcessRequest,
     tx_ctx: &dyn TransactionContext,
-    ctx: &mut HandlerContext,
     processed_block_idx: BlockNum,
     up_to_block_idx: BlockNum,
 ) -> TxnResult<()> {
@@ -2072,12 +2072,15 @@ fn reward(
 
     let mut new_formula = false;
 
-    // skipcq: RS-D1000
-    // TODO: transitioning
-    let s = ctx.get_setting("sawtooth.validator.update1")?;
-    if let Some(val) = s {
-        let update_block = BlockNum::try_from(&val)?;
-        if update_block + BlockNum(500) < processed_block_idx {
+    // for historical reasons update block is calculated as the following:
+    let update_block: Integer;
+    if tip <= &Integer::from(LEGACY_UPDATE_BLOCK_TOP) {
+        update_block = match tip.to_i32_wrapping() {
+            LEGACY_UPDATE_BLOCK_BOTTOM..=LEGACY_UPDATE_BLOCK_TOP => Integer::from(277800),
+            _ => Integer::from(278910),
+        };
+
+        if update_block + Integer::from(500) < *processed_block_idx {
             new_formula = true;
         }
     }
@@ -2122,19 +2125,34 @@ fn reward(
 }
 
 fn filter(
+    tip: &BlockNum,
     tx_ctx: &dyn TransactionContext,
     prefix: &str,
     mut lister: impl FnMut(&str, &[u8]) -> TxnResult<()>,
 ) -> TxnResult<()> {
-    // skipcq: RS-D1000
-    // TODO: Transitioning
-
-    let states = tx_ctx.get_state_entries_by_prefix(prefix)?;
+    let tip_id = string!("#", tip.to_string_radix(10));
+    let states = tx_ctx.get_state_entries_by_prefix(&tip_id, prefix)?;
     for (address, data) in states {
         lister(&address, &data)?;
     }
 
     Ok(())
+}
+
+fn verify_gateway_signer(
+    my_sighash: &str,
+    ctx: &mut HandlerContext,
+) -> TxnResult<()> {
+    let s = ctx.get_setting("sawtooth.gateway.sighash")?;
+    if let Some(val) = s {
+        if val == my_sighash {
+            return Ok(());
+        }
+    }
+    bail_transaction!(
+        "Restricted transaction",
+        context = "Only a priveleged user can run Housekeeping with a non-zero parameter"
+    );
 }
 
 impl CCTransaction for Housekeeping {
@@ -2160,13 +2178,21 @@ impl CCTransaction for Housekeeping {
             })?)?
         };
 
-        if block_idx == 0 {
-            let head = last_block(request);
+        let tip: &BlockNum = &last_block(request);
 
-            if last_processed_block_idx + CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT
-                < head
+        if block_idx == 0 {
+            if last_processed_block_idx.clone()
+                + CONFIRMATION_COUNT * 2
+                + BLOCK_REWARD_PROCESSING_COUNT
+                < *tip
             {
-                reward(request, tx_ctx, ctx, last_processed_block_idx, BlockNum(0))?;
+                reward(
+                    tip,
+                    request,
+                    tx_ctx,
+                    &last_processed_block_idx,
+                    &Integer::new(),
+                )?;
                 tx_ctx.set_state_entry(
                     processed_block_idx,
                     (last_processed_block_idx + BLOCK_REWARD_PROCESSING_COUNT)
@@ -2181,15 +2207,16 @@ impl CCTransaction for Housekeeping {
             return Ok(());
         }
 
-        let tip = last_block(request);
+        let my_sighash = ctx.sighash(request)?;
+        verify_gateway_signer(&my_sighash, ctx)?;
 
-        if block_idx >= (tip - CONFIRMATION_COUNT)? {
+        if block_idx >= tip.clone() - CONFIRMATION_COUNT {
             info!("Premature processing");
             return Ok(());
         }
 
         let ask = string!(NAMESPACE_PREFIX, ASK_ORDER);
-        filter(tx_ctx, &ask, |addr, proto| {
+        filter(tip, tx_ctx, &ask, |addr, proto| {
             let ask_order = protos::AskOrder::try_parse(proto)?;
             let start = BlockNum::try_from(&ask_order.block)?;
             let elapsed = (block_idx - start)?;
@@ -2200,7 +2227,7 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let bid = string!(NAMESPACE_PREFIX, BID_ORDER);
-        filter(tx_ctx, &bid, |addr, proto| {
+        filter(tip, tx_ctx, &bid, |addr, proto| {
             let bid_order = protos::BidOrder::try_parse(proto)?;
             let start = BlockNum::try_from(&bid_order.block)?;
             let elapsed = (block_idx - start)?;
@@ -2211,7 +2238,7 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let offer = string!(NAMESPACE_PREFIX, OFFER);
-        filter(tx_ctx, &offer, |addr, proto| {
+        filter(tip, tx_ctx, &offer, |addr, proto| {
             let offer = protos::Offer::try_parse(proto)?;
             let start = BlockNum::try_from(&offer.block)?;
             let elapsed = (block_idx - start)?;
@@ -2222,12 +2249,12 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let deal = string!(NAMESPACE_PREFIX, DEAL_ORDER);
-        filter(tx_ctx, &deal, |addr, proto| {
+        filter(tip, tx_ctx, &deal, |addr, proto| {
             let deal_order = protos::DealOrder::try_parse(proto)?;
             let start = BlockNum::try_from(&deal_order.block)?;
             let elapsed = (block_idx - start)?;
             if deal_order.expiration < elapsed && deal_order.loan_transfer.is_empty() {
-                if ctx.tip() == 0 || ctx.tip() > DEAL_EXP_FIX_BLOCK {
+                if *tip > DEAL_EXP_FIX_BLOCK {
                     let wallet_id = string!(NAMESPACE_PREFIX, WALLET, &deal_order.sighash);
                     let state_data = get_state_data(tx_ctx, &wallet_id)?;
                     let mut wallet = protos::Wallet::try_parse(&state_data)?;
@@ -2245,7 +2272,7 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let repay = string!(NAMESPACE_PREFIX, REPAYMENT_ORDER);
-        filter(tx_ctx, &repay, |addr, proto| {
+        filter(tip, tx_ctx, &repay, |addr, proto| {
             let repayment_order = protos::RepaymentOrder::try_parse(proto)?;
             let start = BlockNum::try_from(&repayment_order.block)?;
             let elapsed = (block_idx - start)?;
@@ -2256,7 +2283,7 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let fee = string!(NAMESPACE_PREFIX, FEE);
-        filter(tx_ctx, &fee, |addr, proto| {
+        filter(tip, tx_ctx, &fee, |addr, proto| {
             let fee = protos::Fee::try_parse(proto)?;
             let start = BlockNum::try_from(&fee.block)?;
             let elapsed = (block_idx - start)?;
@@ -2280,7 +2307,7 @@ impl CCTransaction for Housekeeping {
             Ok(())
         })?;
 
-        reward(request, tx_ctx, ctx, last_processed_block_idx, block_idx)?;
+        reward(tip, request, tx_ctx, ctx, last_processed_block_idx, block_idx)?;
         tx_ctx.set_state_entry(processed_block_idx, block_idx.to_string().into_bytes())?;
 
         Ok(())
@@ -2319,6 +2346,7 @@ impl TransactionHandler for CCTransactionHandler {
             "1.5".into(),
             "1.6".into(),
             "1.7".into(),
+            "2.0".into(),
         ]
     }
 

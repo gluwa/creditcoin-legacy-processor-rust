@@ -18,12 +18,6 @@ use sawtooth_sdk::{
 use sha2::{Digest, Sha256};
 
 pub struct HandlerContext<'tx> {
-    // sighash: Option<SigHash>,
-    // guid: Option<Guid>,
-    // replaying: bool,
-    // transitioning: bool,
-    // current_state: BTreeMap<State, State>,
-    tip: u64,
     gateway_context: zmq::Context,
     #[cfg(not(all(test, feature = "mock")))]
     local_gateway_sock: zmq::Socket,
@@ -73,13 +67,8 @@ impl<'tx> HandlerContext<'tx> {
             gateway_context,
             gateway_endpoint,
             tx_ctx,
-            tip: 0,
             tx_fee: OnceCell::new(),
         })
-    }
-
-    pub fn tip(&self) -> u64 {
-        self.tip
     }
 
     pub fn sighash(&self, request: &TpProcessRequest) -> TxnResult<SigHash> {
