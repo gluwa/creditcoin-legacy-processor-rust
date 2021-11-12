@@ -1,15 +1,20 @@
 use std::{iter::repeat, mem};
 
-use crate::handler::{constants::SETTINGS_NAMESPACE, types::CCApplyError};
+use crate::{
+    ext::IntegerExt,
+    handler::{constants::SETTINGS_NAMESPACE, types::CCApplyError},
+};
 
 use super::{
-    constants::{EXTERNAL_GATEWAY_TIMEOUT, GATEWAY_TIMEOUT},
+    constants::{EXTERNAL_GATEWAY_TIMEOUT, GATEWAY_TIMEOUT, TX_FEE, TX_FEE_KEY},
     types::{
         CCApplyError::{InternalError, InvalidTransaction},
         Guid, SigHash, TxnResult,
     },
     utils::{self, sha512_id},
 };
+use once_cell::unsync::OnceCell;
+use rug::Integer;
 use sawtooth_sdk::{
     messages::{processor::TpProcessRequest, setting::Setting, Message},
     processor::handler::{ContextError, TransactionContext},
@@ -24,9 +29,11 @@ pub struct HandlerContext<'tx> {
     // current_state: BTreeMap<State, State>,
     tip: u64,
     gateway_context: zmq::Context,
+    #[cfg(not(all(test, feature = "mock")))]
     local_gateway_sock: zmq::Socket,
     gateway_endpoint: String,
     tx_ctx: &'tx dyn TransactionContext,
+    tx_fee: OnceCell<Integer>,
 }
 
 const MAX_KEY_PARTS: usize = 4;
@@ -61,6 +68,7 @@ impl<'tx> HandlerContext<'tx> {
         tx_ctx: &'tx dyn TransactionContext,
     ) -> TxnResult<Self> {
         Ok(Self {
+            #[cfg(not(all(test, feature = "mock")))]
             local_gateway_sock: utils::create_socket(
                 &gateway_context,
                 &gateway_endpoint,
@@ -70,6 +78,7 @@ impl<'tx> HandlerContext<'tx> {
             gateway_endpoint,
             tx_ctx,
             tip: 0,
+            tx_fee: OnceCell::new(),
         })
     }
 
@@ -127,6 +136,21 @@ impl<'tx> HandlerContext<'tx> {
         }
     }
 
+    pub fn tx_fee(&self) -> TxnResult<&Integer> {
+        self.tx_fee
+            .get_or_try_init(|| match self.get_setting(TX_FEE_KEY) {
+                Ok(Some(val)) => Integer::try_parse(&val),
+                Ok(None) => {
+                    log::debug!(
+                        "Transaction fee not set in on-chain settings, falling back to default"
+                    );
+                    Ok(TX_FEE.clone())
+                }
+                Err(e) => Err(e),
+            })
+    }
+
+    #[cfg(not(all(test, feature = "mock")))]
     fn try_verify_external(&mut self, gateway_command: &str) -> TxnResult<Option<String>> {
         log::warn!("Falling back to external gateway");
         let new_local_sock = utils::create_socket(
@@ -173,6 +197,7 @@ impl<'tx> HandlerContext<'tx> {
         }
     }
 
+    #[cfg(not(all(test, feature = "mock")))]
     pub fn verify(&mut self, gateway_command: &str) -> TxnResult<()> {
         self.local_gateway_sock
             .send(gateway_command, 0)
@@ -227,5 +252,57 @@ pub mod mocked {
 
             pub fn verify(&mut self, gateway_command: &str) -> TxnResult<()>;
         }
+    }
+
+    impl MockHandlerContext {
+        pub fn tx_fee(&self) -> TxnResult<Integer> {
+            Ok(TX_FEE.clone())
+        }
+    }
+}
+
+#[cfg(all(test, feature = "mock"))]
+mod tests {
+    use super::HandlerContext;
+    use crate::handler::{
+        constants::{TX_FEE, TX_FEE_KEY},
+        tests::mocked::MockTransactionContext,
+    };
+    use sawtooth_sdk::messages::Message;
+    #[test]
+    fn tx_fee_fetches_from_chain() {
+        let zmq_context = zmq::Context::new();
+        let mut mock_tx_ctx = MockTransactionContext::default();
+        let k = super::make_settings_key(TX_FEE_KEY);
+        let k = &*Box::leak(k.into_boxed_str());
+        let mut setting = sawtooth_sdk::messages::setting::Setting::new();
+        let mut entry = sawtooth_sdk::messages::setting::Setting_Entry::new();
+        entry.set_key(TX_FEE_KEY.into());
+        entry.set_value("1".into());
+        setting.mut_entries().push(entry);
+        let serialized = setting.write_to_bytes().unwrap();
+        mock_tx_ctx
+            .expect_get_state_entry()
+            .with(mockall::predicate::eq(k))
+            .returning(move |_| Ok(Some(serialized.clone())));
+        let context =
+            HandlerContext::create(zmq_context, "tcp://dummy:8080".into(), &mock_tx_ctx).unwrap();
+        let result = context.tx_fee().unwrap().clone();
+        assert_eq!(result, 1u64);
+    }
+    #[test]
+    fn tx_fee_falls_back_to_default() {
+        let zmq_context = zmq::Context::new();
+        let mut mock_tx_ctx = MockTransactionContext::default();
+        let k = super::make_settings_key(TX_FEE_KEY);
+        let k = &*Box::leak(k.into_boxed_str());
+        mock_tx_ctx
+            .expect_get_state_entry()
+            .with(mockall::predicate::eq(k))
+            .returning(move |_| Ok(None));
+        let context =
+            HandlerContext::create(zmq_context, "tcp://dummy:8080".into(), &mock_tx_ctx).unwrap();
+        let result = context.tx_fee().unwrap().clone();
+        assert_eq!(&result, &*TX_FEE);
     }
 }

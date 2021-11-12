@@ -59,6 +59,7 @@ pub static REPAYMENT_ORDER_PREFIX: Lazy<String> = Lazy::new(|| {
     s
 });
 
+pub const TX_FEE_KEY: &str = "sawtooth.validator.fee";
 pub const TX_FEE_STRING: &str = "10000000000000000";
 
 pub static TX_FEE: Lazy<Integer> =
