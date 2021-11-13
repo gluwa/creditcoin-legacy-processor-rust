@@ -2088,11 +2088,9 @@ fn reward(
         up_to_block_idx
     };
 
+    let mut i = processed_block_idx + BlockNum(1);
     let sig = request.get_block_signature();
-
     if sig.is_empty() {
-        let mut i = processed_block_idx + BlockNum(1);
-
         while i <= last_block_idx {
             let height = i;
 
@@ -2104,17 +2102,20 @@ fn reward(
             i += BlockNum(1);
         }
     } else {
-        let first = last_block_idx;
-        let last = processed_block_idx + BlockNum(1);
+        let first = last_block_idx.to_u64().ok_or_else(|| {
+            InvalidTransaction("Block number is too large to fit in a u64".into())
+        })?;
+        let last = i.to_u64().ok_or_else(|| {
+            InvalidTransaction("Block number is too large to fit in a u64".into())
+        })?;
 
         let signatures = tx_ctx.get_reward_block_signatures(sig, first.into(), last.into())?;
 
         info!("Rewarding {} signatures", signatures.len());
 
-        let mut i = last_block_idx;
         for signature in &signatures {
-            award(tx_ctx, new_formula, i, signature)?;
-            i = (i - BlockNum(1))?;
+            award(tx_ctx, new_formula, &i, signature)?;
+            i += BlockNum(1);
         }
     }
 
