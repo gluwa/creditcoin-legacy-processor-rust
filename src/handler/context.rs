@@ -83,6 +83,7 @@ impl<'tx> HandlerContext<'tx> {
     }
 
     pub fn sighash(&self, request: &TpProcessRequest) -> TxnResult<SigHash> {
+        // skipcq: RS-D1000
         // TODO: transitioning
         let signer = request.get_header().get_signer_public_key();
         let compressed = utils::compress(signer)?;
@@ -91,6 +92,7 @@ impl<'tx> HandlerContext<'tx> {
     }
 
     pub fn guid(&self, request: &TpProcessRequest) -> Guid {
+        // skipcq: RS-D1000
         // TODO: transitioning
         Guid(request.get_header().get_nonce().to_owned())
     }

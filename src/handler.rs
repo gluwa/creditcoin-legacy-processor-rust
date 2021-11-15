@@ -1788,6 +1788,7 @@ fn reward(
 
     let mut new_formula = false;
 
+    // skipcq: RS-D1000
     // TODO: transitioning
     let s = ctx.get_setting("sawtooth.validator.update1")?;
     if let Some(val) = s {
@@ -1841,6 +1842,7 @@ fn filter(
     prefix: &str,
     mut lister: impl FnMut(&str, &[u8]) -> TxnResult<()>,
 ) -> TxnResult<()> {
+    // skipcq: RS-D1000
     // TODO: Transitioning
 
     let states = tx_ctx.get_state_entries_by_prefix(prefix)?;
@@ -1866,12 +1868,12 @@ impl CCTransaction for Housekeeping {
             PROCESSED_BLOCK_ID,
         );
         let state_data = try_get_state_data(tx_ctx, &processed_block_idx)?.unwrap_or_default();
-        let last_processed_block_idx = if !state_data.is_empty() {
+        let last_processed_block_idx = if state_data.is_empty() {
+            BlockNum::default()
+        } else {
             BlockNum::try_from(str::from_utf8(&state_data).map_err(|e| {
                 InvalidTransaction(format!("State data is not valid UTF-8 : {}", e))
             })?)?
-        } else {
-            BlockNum::default()
         };
 
         if block_idx == 0 {
