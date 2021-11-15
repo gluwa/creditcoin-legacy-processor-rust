@@ -205,6 +205,7 @@ pub fn create_socket(
 }
 
 pub fn last_block(request: &TpProcessRequest) -> BlockNum {
+    // skipcq: RS-D1000
     // TODO: transitioning
     let tip = request.get_tip();
     if tip == 0 {
