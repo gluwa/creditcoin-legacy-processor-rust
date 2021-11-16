@@ -8,7 +8,7 @@ use crate::{
     bail_transaction,
     ext::{ErrorExt, IntegerExt, MessageExt},
     handler::utils::{
-        add_fee, get_integer, get_integer_string, get_signed_integer, get_string, get_u64,
+        add_fee, get_block_num, get_integer, get_integer_string, get_signed_integer, get_string,
         last_block,
     },
     protos, string,
@@ -66,7 +66,7 @@ pub enum CCCommand {
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct SendFunds {
-    amount: Integer,
+    amount: Credo,
     sighash: SigHash,
 }
 
@@ -79,7 +79,7 @@ pub struct RegisterAddress {
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct RegisterTransfer {
-    gain: Integer,
+    gain: CurrencyAmount,
     order_id: String,
     blockchain_tx_id: String,
 }
@@ -90,8 +90,8 @@ pub struct AddAskOrder {
     amount_str: String,
     interest: String,
     maturity: String,
-    fee: String,
-    expiration: u64,
+    fee_str: String,
+    expiration: BlockNum,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
@@ -100,21 +100,21 @@ pub struct AddBidOrder {
     amount_str: String,
     interest: String,
     maturity: String,
-    fee: String,
-    expiration: u64,
+    fee_str: String,
+    expiration: BlockNum,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct AddOffer {
     ask_order_id: String,
     bid_order_id: String,
-    expiration: u64,
+    expiration: BlockNum,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct AddDealOrder {
     offer_id: String,
-    expiration: u64,
+    expiration: BlockNum,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
@@ -144,8 +144,8 @@ pub struct Exempt {
 pub struct AddRepaymentOrder {
     deal_order_id: String,
     address_id: String,
-    amount: String,
-    expiration: u64,
+    amount_str: String,
+    expiration: BlockNum,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
@@ -162,13 +162,13 @@ pub struct CloseRepaymentOrder {
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct CollectCoins {
     eth_address: String,
-    amount: Integer,
+    amount: Credo,
     blockchain_tx_id: String,
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct Housekeeping {
-    block_idx: Integer,
+    block_idx: BlockNum,
 }
 
 impl TryFrom<Value> for CCCommand {
@@ -180,7 +180,7 @@ impl TryFrom<Value> for CCCommand {
             debug!("verb = {}", verb);
             Ok(match verb.to_uppercase().as_str() {
                 "SENDFUNDS" => {
-                    let amount = get_integer(&map, "p1", "amount")?;
+                    let amount = Credo(get_integer(&map, "p1", "amount")?);
                     let sighash = SigHash(get_string(&map, "p2", "sighash")?.clone());
                     SendFunds { amount, sighash }.into()
                 }
@@ -198,7 +198,7 @@ impl TryFrom<Value> for CCCommand {
                 }
 
                 "REGISTERTRANSFER" => {
-                    let gain = get_signed_integer(&map, "p1", "gain")?;
+                    let gain = CurrencyAmount(get_signed_integer(&map, "p1", "gain")?);
                     let order_id = get_string(&map, "p2", "orderID")?.to_lowercase();
                     let blockchain_tx_id = get_string(&map, "p3", "blockchainTxId")?.to_lowercase();
                     RegisterTransfer {
@@ -214,14 +214,14 @@ impl TryFrom<Value> for CCCommand {
                     let amount_str = get_integer_string(&map, "p2", "amount")?.clone();
                     let interest = get_integer_string(&map, "p3", "interest")?.clone();
                     let maturity = get_integer_string(&map, "p4", "maturity")?.clone();
-                    let fee = get_integer_string(&map, "p5", "fee")?.clone();
-                    let expiration = get_u64(&map, "p6", "expiration")?;
+                    let fee_str = get_integer_string(&map, "p5", "fee")?.clone();
+                    let expiration = get_block_num(&map, "p6", "expiration")?;
                     AddAskOrder {
                         address_id,
                         amount_str,
                         interest,
                         maturity,
-                        fee,
+                        fee_str,
                         expiration,
                     }
                     .into()
@@ -232,14 +232,14 @@ impl TryFrom<Value> for CCCommand {
                     let amount_str = get_integer_string(&map, "p2", "amount")?.clone();
                     let interest = get_integer_string(&map, "p3", "interest")?.clone();
                     let maturity = get_integer_string(&map, "p4", "maturity")?.clone();
-                    let fee = get_integer_string(&map, "p5", "fee")?.to_owned();
-                    let expiration = get_u64(&map, "p6", "expiration")?;
+                    let fee_str = get_integer_string(&map, "p5", "fee")?.to_owned();
+                    let expiration = get_block_num(&map, "p6", "expiration")?;
                     AddBidOrder {
                         address_id,
                         amount_str,
                         interest,
                         maturity,
-                        fee,
+                        fee_str,
                         expiration,
                     }
                     .into()
@@ -248,7 +248,7 @@ impl TryFrom<Value> for CCCommand {
                 "ADDOFFER" => {
                     let ask_order_id = get_string(&map, "p1", "askOrderId")?.to_lowercase();
                     let bid_order_id = get_string(&map, "p2", "bidOrderId")?.to_lowercase();
-                    let expiration = get_u64(&map, "p3", "expiration")?;
+                    let expiration = get_block_num(&map, "p3", "expiration")?;
 
                     AddOffer {
                         ask_order_id,
@@ -260,7 +260,7 @@ impl TryFrom<Value> for CCCommand {
 
                 "ADDDEALORDER" => {
                     let offer_id = get_string(&map, "p1", "offerId")?.to_lowercase();
-                    let expiration = get_u64(&map, "p2", "expiration")?;
+                    let expiration = get_block_num(&map, "p2", "expiration")?;
 
                     AddDealOrder {
                         offer_id,
@@ -310,13 +310,13 @@ impl TryFrom<Value> for CCCommand {
                 "ADDREPAYMENTORDER" => {
                     let deal_order_id = get_string(&map, "p1", "dealOrderId")?.to_lowercase();
                     let address_id = get_string(&map, "p2", "addressId")?.to_lowercase();
-                    let amount = get_integer_string(&map, "p3", "amount")?.clone();
-                    let expiration = get_u64(&map, "p4", "expiration")?;
+                    let amount_str = get_integer_string(&map, "p3", "amount")?.clone();
+                    let expiration = get_block_num(&map, "p4", "expiration")?;
 
                     AddRepaymentOrder {
                         deal_order_id,
                         address_id,
-                        amount,
+                        amount_str,
                         expiration,
                     }
                     .into()
@@ -335,13 +335,13 @@ impl TryFrom<Value> for CCCommand {
 
                 "COLLECTCOINS" => CollectCoins {
                     eth_address: get_string(&map, "p1", "ethAddress")?.to_lowercase(),
-                    amount: get_integer(&map, "p2", "amount")?,
+                    amount: Credo(get_integer(&map, "p2", "amount")?),
                     blockchain_tx_id: get_string(&map, "p3", "blockchainTxId")?.to_lowercase(),
                 }
                 .into(),
 
                 "HOUSEKEEPING" => Housekeeping {
-                    block_idx: get_integer(&map, "p1", "blockIdx")?,
+                    block_idx: get_block_num(&map, "p1", "blockIdx")?,
                 }
                 .into(),
 
@@ -365,8 +365,10 @@ fn charge(
     let state_data = get_state_data(txn_ctx, &wallet_id).context("Failed to get wallet data")?;
     let mut wallet = Wallet::try_parse(&state_data)
         .context(format!("The wallet for {:?} is invalid", sighash))?;
-    let balance = Integer::try_parse(&wallet.amount)
-        .context(format!("The wallet balance for {:?} is malformed", sighash))?;
+    let balance = Credo::from_wallet(&wallet).context(format!(
+        "The wallet balance at {:?} is malformed",
+        wallet_id
+    ))?;
 
     let tx_fee = ctx.tx_fee()?;
     if tx_fee.gt(&balance) {
@@ -377,7 +379,7 @@ fn charge(
         );
     }
 
-    wallet.amount = (balance - tx_fee).to_string_radix(10);
+    wallet.amount = (balance - tx_fee).to_string();
     Ok((wallet_id, wallet))
 }
 
@@ -414,7 +416,7 @@ impl CCTransaction for SendFunds {
             src_wallet_id
         ))?;
         let amount_plus_fee = self.amount.clone() + ctx.tx_fee()?;
-        let mut src_balance = Integer::try_parse(&src_wallet.amount).context(format!(
+        let mut src_balance = Credo::from_wallet(&src_wallet).context(format!(
             "Failed to parse wallet balance at {:?}, found {:?}",
             src_wallet_id, &src_wallet.amount
         ))?;
@@ -434,7 +436,7 @@ impl CCTransaction for SendFunds {
         let dest_wallet = match state_data {
             Some(state_data) => {
                 let mut dest_wallet = Wallet::try_parse(&state_data)?;
-                let mut dest_balance = Integer::try_parse(&dest_wallet.amount)?;
+                let mut dest_balance = Credo::from_wallet(&dest_wallet)?;
                 dest_balance += self.amount;
                 dest_wallet.amount = dest_balance.to_string();
                 dest_wallet
@@ -483,7 +485,7 @@ impl CCTransaction for RegisterAddress {
             );
         }
 
-        let address = crate::protos::Address {
+        let address = protos::Address {
             blockchain: self.blockchain,
             value: self.address,
             network: self.network,
@@ -548,9 +550,9 @@ impl CCTransaction for RegisterTransfer {
         }
 
         let state_data = get_state_data(tx_ctx, &src_address_id)?;
-        let src_address = crate::protos::Address::try_parse(&state_data)?;
+        let src_address = protos::Address::try_parse(&state_data)?;
         let state_data = get_state_data(tx_ctx, &dest_address_id)?;
-        let dest_address = crate::protos::Address::try_parse(&state_data)?;
+        let dest_address = protos::Address::try_parse(&state_data)?;
 
         if src_address.sighash != *my_sighash {
             bail_transaction!(
@@ -587,9 +589,9 @@ impl CCTransaction for RegisterTransfer {
         if blockchain_tx_id == "0" {
             amount_str = "0".into();
         } else {
-            let mut amount = Integer::try_parse(&amount_str)?;
+            let mut amount = CurrencyAmount::try_parse(&amount_str)?;
             amount += gain;
-            amount_str = amount.to_string_radix(10);
+            amount_str = amount.to_string();
 
             let gateway_command = [
                 blockchain.as_str(),
@@ -604,7 +606,7 @@ impl CCTransaction for RegisterTransfer {
             .join(" ");
             ctx.verify(&gateway_command)?;
         }
-        let transfer = crate::protos::Transfer {
+        let transfer = protos::Transfer {
             blockchain,
             src_address: src_address_id,
             dst_address: dest_address_id,
@@ -635,7 +637,7 @@ impl CCTransaction for AddAskOrder {
             amount_str,
             interest,
             maturity,
-            fee,
+            fee_str,
             expiration,
         } = self;
         let my_sighash = ctx.sighash(request)?;
@@ -654,7 +656,7 @@ impl CCTransaction for AddAskOrder {
 
         let state_data = get_state_data(tx_ctx, &address_id)?;
 
-        let address = crate::protos::Address::try_parse(&state_data)?;
+        let address = protos::Address::try_parse(&state_data)?;
 
         if address.sighash != my_sighash.as_str() {
             bail_transaction!(
@@ -665,14 +667,14 @@ impl CCTransaction for AddAskOrder {
             );
         }
 
-        let ask_order = crate::protos::AskOrder {
+        let ask_order = protos::AskOrder {
             blockchain: address.blockchain,
             address: address_id,
             amount: amount_str,
             interest,
             maturity,
-            fee,
-            expiration,
+            fee: fee_str,
+            expiration: expiration.into(),
             block: last_block(request).to_string(),
             sighash: my_sighash.deref().clone(),
         };
@@ -709,7 +711,7 @@ impl CCTransaction for AddBidOrder {
 
         let state_data = get_state_data(tx_ctx, &self.address_id)?;
 
-        let address = crate::protos::Address::try_parse(&state_data)?;
+        let address = protos::Address::try_parse(&state_data)?;
         if address.sighash != my_sighash.as_str() {
             bail_transaction!(
                 "The address doesn't belong to the party",
@@ -719,14 +721,14 @@ impl CCTransaction for AddBidOrder {
             );
         }
 
-        let bid_order = crate::protos::BidOrder {
+        let bid_order = protos::BidOrder {
             blockchain: address.blockchain,
             address: self.address_id,
             amount: self.amount_str,
             interest: self.interest,
             maturity: self.maturity,
-            fee: self.fee,
-            expiration: self.expiration,
+            fee: self.fee_str,
+            expiration: self.expiration.into(),
             block: last_block(request).to_string(),
             sighash: my_sighash.clone().into(),
         };
@@ -769,7 +771,7 @@ impl CCTransaction for AddOffer {
 
         let state_data = get_state_data(tx_ctx, &self.ask_order_id)?;
 
-        let ask_order = crate::protos::AskOrder::try_parse(&state_data)?;
+        let ask_order: protos::AskOrder = protos::AskOrder::try_parse(&state_data)?;
 
         if ask_order.sighash != my_sighash.as_str() {
             bail_transaction!(
@@ -781,8 +783,20 @@ impl CCTransaction for AddOffer {
         }
 
         let head = last_block(request);
-        let start = Integer::try_parse(&ask_order.block)?;
-        let elapsed = head.clone() - start;
+        let start = BlockNum::try_from(ask_order.block.as_str())?;
+
+        if head < start {
+            bail_transaction!(
+                "The ask order has a block number greater than the chain head",
+                context =
+                    "The block number for the ask order with ID {:?} is {:?}, but the head is {:?}",
+                { self.ask_order_id },
+                start,
+                head
+            );
+        }
+
+        let elapsed = (head - start)?;
 
         if ask_order.expiration < elapsed {
             bail_transaction!(
@@ -793,10 +807,10 @@ impl CCTransaction for AddOffer {
 
         let state_data = get_state_data(tx_ctx, &ask_order.address)?;
 
-        let src_address = crate::protos::Address::try_parse(&state_data)?;
+        let src_address = protos::Address::try_parse(&state_data)?;
 
         let state_data = get_state_data(tx_ctx, &self.bid_order_id)?;
-        let bid_order = crate::protos::BidOrder::try_parse(&state_data)?;
+        let bid_order = protos::BidOrder::try_parse(&state_data)?;
 
         if bid_order.sighash == my_sighash.as_str() {
             bail_transaction!(
@@ -805,8 +819,20 @@ impl CCTransaction for AddOffer {
             );
         }
 
-        let start = Integer::try_parse(&bid_order.block)?;
-        let elapsed = head - start;
+        let start = BlockNum::try_from(&bid_order.block)?;
+
+        if head < start {
+            bail_transaction!(
+                "The bid order has a block number greater than the chain head",
+                context =
+                    "The block number for the bid order with ID {:?} is {:?}, but the head is {:?}",
+                { self.bid_order_id },
+                start,
+                head
+            );
+        }
+
+        let elapsed = (head - start)?;
 
         if bid_order.expiration < elapsed {
             bail_transaction!(
@@ -816,7 +842,7 @@ impl CCTransaction for AddOffer {
         }
 
         let state_data = get_state_data(tx_ctx, &bid_order.address)?;
-        let dst_address = crate::protos::Address::try_parse(&state_data)?;
+        let dst_address = protos::Address::try_parse(&state_data)?;
 
         if src_address.blockchain != dst_address.blockchain
             || src_address.network != dst_address.network
@@ -831,8 +857,8 @@ impl CCTransaction for AddOffer {
             );
         }
 
-        let ask_fee = Integer::try_parse(&ask_order.fee)?;
-        let bid_fee = Integer::try_parse(&bid_order.fee)?;
+        let ask_fee = Credo::try_parse(&ask_order.fee)?;
+        let bid_fee = Credo::try_parse(&bid_order.fee)?;
 
         let ask_interest = Integer::try_parse(&ask_order.interest)?;
         let ask_maturity = Integer::try_parse(&ask_order.maturity)?;
@@ -850,11 +876,11 @@ impl CCTransaction for AddOffer {
             );
         }
 
-        let offer = crate::protos::Offer {
+        let offer = protos::Offer {
             blockchain: src_address.blockchain,
             ask_order: self.ask_order_id,
             bid_order: self.bid_order_id,
-            expiration: self.expiration,
+            expiration: self.expiration.into(),
             block: last_block(request).to_string(),
             sighash: my_sighash.clone().into(),
         };
@@ -890,11 +916,21 @@ impl CCTransaction for AddDealOrder {
 
         let state_data = get_state_data(tx_ctx, &self.offer_id)?;
 
-        let offer = crate::protos::Offer::try_parse(&state_data)?;
+        let offer = protos::Offer::try_parse(&state_data)?;
 
         let head = last_block(request);
-        let start = Integer::try_parse(&offer.block)?;
-        let elapsed = head - start;
+        let start = BlockNum::try_from(&offer.block)?;
+        if head < start {
+            bail_transaction!(
+                "The offer has a block number greater than the tip",
+                context =
+                    "The block number for the offer with ID {:?} is {:?}, but the head is {:?}",
+                { self.offer_id },
+                start,
+                head
+            );
+        }
+        let elapsed = (head - start)?;
 
         if offer.expiration < elapsed {
             bail_transaction!(
@@ -904,7 +940,7 @@ impl CCTransaction for AddDealOrder {
         }
 
         let state_data = get_state_data(tx_ctx, &offer.bid_order)?;
-        let bid_order = crate::protos::BidOrder::try_parse(&state_data)?;
+        let bid_order = protos::BidOrder::try_parse(&state_data)?;
         if bid_order.sighash != my_sighash.as_str() {
             bail_transaction!(
                 "Only a fundraiser can add a deal order",
@@ -915,15 +951,15 @@ impl CCTransaction for AddDealOrder {
         }
 
         let state_data = get_state_data(tx_ctx, &offer.ask_order)?;
-        let ask_order = crate::protos::AskOrder::try_parse(&state_data)?;
+        let ask_order = protos::AskOrder::try_parse(&state_data)?;
 
         let wallet_id = string!(NAMESPACE_PREFIX.as_str(), WALLET, my_sighash.as_str());
         let state_data = get_state_data(tx_ctx, &wallet_id)?;
 
-        let mut wallet = crate::protos::Wallet::try_parse(&state_data)?;
+        let mut wallet = protos::Wallet::try_parse(&state_data)?;
 
-        let mut balance = Integer::try_parse(&wallet.amount)?;
-        let fee = Integer::try_parse(&bid_order.fee)? + ctx.tx_fee()?;
+        let mut balance = Credo::from_wallet(&wallet)?;
+        let fee = Credo::try_parse(&bid_order.fee)? + ctx.tx_fee()?;
         if balance < fee {
             bail_transaction!(
                 "Insufficient funds",
@@ -936,7 +972,7 @@ impl CCTransaction for AddDealOrder {
 
         wallet.amount = balance.to_string();
 
-        let deal_order = crate::protos::DealOrder {
+        let deal_order = protos::DealOrder {
             blockchain: offer.blockchain,
             src_address: ask_order.address,
             dst_address: bid_order.address,
@@ -944,7 +980,7 @@ impl CCTransaction for AddDealOrder {
             interest: bid_order.interest,
             maturity: bid_order.maturity,
             fee: bid_order.fee,
-            expiration: self.expiration,
+            expiration: self.expiration.into(),
             block: last_block(request).to_string(),
             sighash: my_sighash.clone().into(),
             ..protos::DealOrder::default()
@@ -979,7 +1015,7 @@ impl CCTransaction for CompleteDealOrder {
         let my_sighash = ctx.sighash(request)?;
 
         let state_data = get_state_data(tx_ctx, &self.deal_order_id)?;
-        let mut deal_order = crate::protos::DealOrder::try_parse(&state_data)?;
+        let mut deal_order = protos::DealOrder::try_parse(&state_data)?;
 
         if !deal_order.loan_transfer.is_empty() {
             bail_transaction!(
@@ -990,7 +1026,7 @@ impl CCTransaction for CompleteDealOrder {
         }
 
         let state_data = get_state_data(tx_ctx, &deal_order.src_address)?;
-        let src_address = crate::protos::Address::try_parse(&state_data)?;
+        let src_address = protos::Address::try_parse(&state_data)?;
 
         if src_address.sighash != my_sighash.as_str() {
             bail_transaction!(
@@ -1002,8 +1038,18 @@ impl CCTransaction for CompleteDealOrder {
         }
 
         let head = last_block(request);
-        let start = Integer::try_parse(&deal_order.block)?;
-        let elapsed = head - &start;
+        let start = BlockNum::try_from(&deal_order.block)?;
+        if head < start {
+            bail_transaction!(
+                "The deal order has a block number greater than the tip",
+                context =
+                    "The block number for the deal order with ID {:?} is {:?}, but the head is {:?}",
+                { self.deal_order_id },
+                start,
+                head
+            );
+        }
+        let elapsed = (head - start)?;
 
         if deal_order.expiration < elapsed {
             bail_transaction!(
@@ -1055,7 +1101,7 @@ impl CCTransaction for CompleteDealOrder {
         let wallet_id = string!(NAMESPACE_PREFIX.as_str(), WALLET, my_sighash.as_str());
         let state_data = get_state_data(tx_ctx, &wallet_id)?;
 
-        let fee = Integer::try_parse(&deal_order.fee)? - ctx.tx_fee()?;
+        let fee = Credo::try_parse(&deal_order.fee)? - ctx.tx_fee()?;
 
         let mut wallet = protos::Wallet::default();
 
@@ -1066,7 +1112,7 @@ impl CCTransaction for CompleteDealOrder {
             wallet.amount = fee.to_string();
         } else {
             wallet = Wallet::try_parse(&state_data)?;
-            let mut balance = Integer::try_parse(&wallet.amount)?;
+            let mut balance = Credo::from_wallet(&wallet)?;
             balance += fee;
             if balance < 0 {
                 bail_transaction!("Insufficient funds", context = "The wallet balance at {:?} plus the deal order fee of {} does not cover the transaction fee", wallet_id, {deal_order.fee});
@@ -1221,16 +1267,25 @@ impl CCTransaction for CloseDealOrder {
         let loan_transfer = protos::Transfer::try_parse(&state_data)?;
 
         let head = last_block(request);
-        let start = Integer::try_parse(&loan_transfer.block)?;
-        let maturity = Integer::try_parse(&deal_order.maturity)?;
+        let start = BlockNum::try_from(&loan_transfer.block)?;
+        if head < start {
+            bail_transaction!(
+                "The loan transfer has a block number greater than the tip",
+                context =
+                    "The block number for the loan transfer ID  is {:?}, but the head is {:?}",
+                start,
+                head
+            );
+        }
+        let maturity = BlockNum::try_from(&deal_order.maturity)?;
 
-        let ticks = ((head - start) + &maturity) / maturity;
+        let ticks = ((head - start)? + maturity) / maturity;
 
-        let deal_amount = Integer::try_parse(&deal_order.amount)?;
-        let deal_interest = Integer::try_parse(&deal_order.interest)?;
-        let amount = calc_interest(&deal_amount, &ticks, &deal_interest);
+        let deal_amount = CurrencyAmount::try_parse(&deal_order.amount)?;
+        let deal_interest = CurrencyAmount::try_parse(&deal_order.interest)?;
+        let amount = calc_interest(&deal_amount, ticks, &deal_interest);
 
-        let repay_amount = Integer::try_parse(&repayment_transfer.amount)?;
+        let repay_amount = CurrencyAmount::try_parse(&repayment_transfer.amount)?;
 
         if repay_amount < amount {
             bail_transaction!("The transfer doesn't match the order", context = "The amount on the repayment transfer is {}, but the total expected amount is {}", repay_amount, amount);
@@ -1423,8 +1478,8 @@ impl CCTransaction for AddRepaymentOrder {
             blockchain: src_address.blockchain,
             src_address: self.address_id,
             dst_address: deal_order.src_address,
-            amount: self.amount,
-            expiration: self.expiration,
+            amount: self.amount_str,
+            expiration: self.expiration.into(),
             block: last_block(request).to_string(),
             deal: self.deal_order_id,
             sighash: my_sighash.clone().into(),
@@ -1633,7 +1688,7 @@ impl CCTransaction for CollectCoins {
             }
         } else {
             let wallet = Wallet::try_parse(&state_data)?;
-            let mut balance = Integer::try_parse(&wallet.amount)?;
+            let mut balance = Credo::from_wallet(&wallet)?;
             balance += &self.amount;
             info!("New amount = {}", balance);
             protos::Wallet {
@@ -1656,15 +1711,14 @@ impl CCTransaction for CollectCoins {
 fn award(
     tx_ctx: &dyn TransactionContext,
     new_formula: bool,
-    block_idx: &Integer,
+    block_idx: BlockNum,
     signer: &str,
 ) -> TxnResult<()> {
     let mut buf = Integer::new();
-    let mut reward = Integer::new();
+    let mut reward = Credo::new();
 
     if new_formula {
-        let mut reward = Integer::new();
-        buf.assign(block_idx / BLOCKS_IN_PERIOD_UPDATE1);
+        buf.assign((block_idx / BLOCKS_IN_PERIOD_UPDATE1).0);
 
         let period = buf.to_i32().ok_or_else(|| {
             InvalidTransaction("Block number is too large to fit in an i32".into())
@@ -1688,7 +1742,7 @@ fn award(
             format!("{:0<width$}", &fraction_str[pos..], width = 20 - pos)
         };
 
-        reward.assign(28 * Integer::try_parse(&fraction_in_wei_str)?);
+        reward.assign(Credo::try_parse(&fraction_in_wei_str)? * 28);
     } else {
         reward.assign(&*REWARD_AMOUNT);
     }
@@ -1705,7 +1759,7 @@ fn award(
             Wallet { amount: reward_str }
         } else {
             let wallet = Wallet::try_parse(&state_data)?;
-            let balance = Integer::try_parse(&wallet.amount)? + reward;
+            let balance = Credo::from_wallet(&wallet)? + reward;
             Wallet {
                 amount: balance.to_string(),
             }
@@ -1726,65 +1780,57 @@ fn reward(
     request: &TpProcessRequest,
     tx_ctx: &dyn TransactionContext,
     ctx: &mut HandlerContext,
-    processed_block_idx: &Integer,
-    up_to_block_idx: &Integer,
+    processed_block_idx: BlockNum,
+    up_to_block_idx: BlockNum,
 ) -> TxnResult<()> {
     info!("rewarding!");
-    assert!(up_to_block_idx == &0 || up_to_block_idx > processed_block_idx);
+    assert!(up_to_block_idx == 0 || up_to_block_idx > processed_block_idx);
 
     let mut new_formula = false;
 
+    // skipcq: RS-D1000
     // TODO: transitioning
     let s = ctx.get_setting("sawtooth.validator.update1")?;
     if let Some(val) = s {
-        let update_block = Integer::try_parse(&*val)?;
-        if update_block + 500 < *processed_block_idx {
+        let update_block = BlockNum::try_from(&val)?;
+        if update_block + BlockNum(500) < processed_block_idx {
             new_formula = true;
         }
     }
 
-    let mut last_block_idx = Integer::new();
-    if *up_to_block_idx == 0 {
-        last_block_idx.assign(processed_block_idx + BLOCK_REWARD_PROCESSING_COUNT)
+    let last_block_idx = if up_to_block_idx == 0 {
+        processed_block_idx + BLOCK_REWARD_PROCESSING_COUNT
     } else {
-        last_block_idx.assign(up_to_block_idx)
-    }
+        up_to_block_idx
+    };
 
     let sig = request.get_block_signature();
 
     if sig.is_empty() {
-        let mut i = Integer::from(processed_block_idx + 1);
+        let mut i = processed_block_idx + BlockNum(1);
 
         while i <= last_block_idx {
-            let height = i.to_u64().ok_or_else(|| {
-                InvalidTransaction("Block number is too large to fit in a u64".into())
-            })?;
+            let height = i;
 
-            let signer = tx_ctx.get_sig_by_num(height)?;
+            let signer = tx_ctx.get_sig_by_num(height.into())?;
 
             info!("rewarding signer {} for block {}", signer, height);
 
-            award(tx_ctx, new_formula, &i, &signer)?;
-            i += 1;
+            award(tx_ctx, new_formula, i, &signer)?;
+            i += BlockNum(1);
         }
     } else {
-        let first = last_block_idx.to_u64().ok_or_else(|| {
-            InvalidTransaction("Block number is too large to fit in a u64".into())
-        })?;
-        let last = Integer::from(processed_block_idx + 1)
-            .to_u64()
-            .ok_or_else(|| {
-                InvalidTransaction("Block number is too large to fit in a u64".into())
-            })?;
+        let first = last_block_idx;
+        let last = processed_block_idx + BlockNum(1);
 
-        let signatures = tx_ctx.get_reward_block_signatures(sig, first, last)?;
+        let signatures = tx_ctx.get_reward_block_signatures(sig, first.into(), last.into())?;
 
         info!("Rewarding {} signatures", signatures.len());
 
         let mut i = last_block_idx;
         for signature in &signatures {
-            award(tx_ctx, new_formula, &i, signature)?;
-            i -= 1;
+            award(tx_ctx, new_formula, i, signature)?;
+            i = (i - BlockNum(1))?;
         }
     }
 
@@ -1796,6 +1842,7 @@ fn filter(
     prefix: &str,
     mut lister: impl FnMut(&str, &[u8]) -> TxnResult<()>,
 ) -> TxnResult<()> {
+    // skipcq: RS-D1000
     // TODO: Transitioning
 
     let states = tx_ctx.get_state_entries_by_prefix(prefix)?;
@@ -1821,31 +1868,21 @@ impl CCTransaction for Housekeeping {
             PROCESSED_BLOCK_ID,
         );
         let state_data = try_get_state_data(tx_ctx, &processed_block_idx)?.unwrap_or_default();
-        let mut last_processed_block_idx = Integer::new();
-
-        if !state_data.is_empty() {
-            last_processed_block_idx.assign(Integer::try_parse(
-                str::from_utf8(&state_data).map_err(|e| {
-                    InvalidTransaction(format!("State data is not valid UTF-8 : {}", e))
-                })?,
-            )?);
-        }
+        let last_processed_block_idx = if state_data.is_empty() {
+            BlockNum::default()
+        } else {
+            BlockNum::try_from(str::from_utf8(&state_data).map_err(|e| {
+                InvalidTransaction(format!("State data is not valid UTF-8 : {}", e))
+            })?)?
+        };
 
         if block_idx == 0 {
             let head = last_block(request);
 
-            if last_processed_block_idx.clone()
-                + CONFIRMATION_COUNT * 2
-                + BLOCK_REWARD_PROCESSING_COUNT
+            if last_processed_block_idx + CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT
                 < head
             {
-                reward(
-                    request,
-                    tx_ctx,
-                    ctx,
-                    &last_processed_block_idx,
-                    &Integer::new(),
-                )?;
+                reward(request, tx_ctx, ctx, last_processed_block_idx, BlockNum(0))?;
                 tx_ctx.set_state_entry(
                     processed_block_idx,
                     (last_processed_block_idx + BLOCK_REWARD_PROCESSING_COUNT)
@@ -1862,19 +1899,17 @@ impl CCTransaction for Housekeeping {
 
         let tip = last_block(request);
 
-        if block_idx >= tip - CONFIRMATION_COUNT {
+        if block_idx >= (tip - CONFIRMATION_COUNT)? {
             info!("Premature processing");
             return Ok(());
         }
 
-        let mut elapsed_buf = Integer::new();
-
         let ask = string!(NAMESPACE_PREFIX, ASK_ORDER);
         filter(tx_ctx, &ask, |addr, proto| {
             let ask_order = protos::AskOrder::try_parse(proto)?;
-            let start = Integer::try_parse(&ask_order.block)?;
-            elapsed_buf.assign(&block_idx - &start);
-            if ask_order.expiration < elapsed_buf {
+            let start = BlockNum::try_from(&ask_order.block)?;
+            let elapsed = (block_idx - start)?;
+            if ask_order.expiration < elapsed {
                 tx_ctx.delete_state_entry(addr)?;
             }
             Ok(())
@@ -1883,9 +1918,9 @@ impl CCTransaction for Housekeeping {
         let bid = string!(NAMESPACE_PREFIX, BID_ORDER);
         filter(tx_ctx, &bid, |addr, proto| {
             let bid_order = protos::BidOrder::try_parse(proto)?;
-            let start = Integer::try_parse(&bid_order.block)?;
-            elapsed_buf.assign(&block_idx - &start);
-            if bid_order.expiration < elapsed_buf {
+            let start = BlockNum::try_from(&bid_order.block)?;
+            let elapsed = (block_idx - start)?;
+            if bid_order.expiration < elapsed {
                 tx_ctx.delete_state_entry(addr)?;
             }
             Ok(())
@@ -1894,9 +1929,9 @@ impl CCTransaction for Housekeeping {
         let offer = string!(NAMESPACE_PREFIX, OFFER);
         filter(tx_ctx, &offer, |addr, proto| {
             let offer = protos::Offer::try_parse(proto)?;
-            let start = Integer::try_parse(&offer.block)?;
-            elapsed_buf.assign(&block_idx - &start);
-            if offer.expiration < elapsed_buf {
+            let start = BlockNum::try_from(&offer.block)?;
+            let elapsed = (block_idx - start)?;
+            if offer.expiration < elapsed {
                 tx_ctx.delete_state_entry(addr)?;
             }
             Ok(())
@@ -1905,15 +1940,15 @@ impl CCTransaction for Housekeeping {
         let deal = string!(NAMESPACE_PREFIX, DEAL_ORDER);
         filter(tx_ctx, &deal, |addr, proto| {
             let deal_order = protos::DealOrder::try_parse(proto)?;
-            let start = Integer::try_parse(&deal_order.block)?;
-            elapsed_buf.assign(&block_idx - &start);
-            if deal_order.expiration < elapsed_buf && deal_order.loan_transfer.is_empty() {
+            let start = BlockNum::try_from(&deal_order.block)?;
+            let elapsed = (block_idx - start)?;
+            if deal_order.expiration < elapsed && deal_order.loan_transfer.is_empty() {
                 if ctx.tip() == 0 || ctx.tip() > DEAL_EXP_FIX_BLOCK {
                     let wallet_id = string!(NAMESPACE_PREFIX, WALLET, &deal_order.sighash);
                     let state_data = get_state_data(tx_ctx, &wallet_id)?;
                     let mut wallet = protos::Wallet::try_parse(&state_data)?;
-                    let mut balance = Integer::try_parse(&wallet.amount)?;
-                    balance += Integer::try_parse(&deal_order.fee)?;
+                    let mut balance = Credo::from_wallet(&wallet)?;
+                    balance += Credo::try_parse(&deal_order.fee)?;
                     wallet.amount = balance.to_string();
 
                     let mut states = vec![];
@@ -1928,10 +1963,9 @@ impl CCTransaction for Housekeeping {
         let repay = string!(NAMESPACE_PREFIX, REPAYMENT_ORDER);
         filter(tx_ctx, &repay, |addr, proto| {
             let repayment_order = protos::RepaymentOrder::try_parse(proto)?;
-            let start = Integer::try_parse(&repayment_order.block)?;
-            elapsed_buf.assign(&block_idx - &start);
-            if repayment_order.expiration < elapsed_buf && repayment_order.previous_owner.is_empty()
-            {
+            let start = BlockNum::try_from(&repayment_order.block)?;
+            let elapsed = (block_idx - start)?;
+            if repayment_order.expiration < elapsed && repayment_order.previous_owner.is_empty() {
                 tx_ctx.delete_state_entry(addr)?;
             }
             Ok(())
@@ -1940,14 +1974,14 @@ impl CCTransaction for Housekeeping {
         let fee = string!(NAMESPACE_PREFIX, FEE);
         filter(tx_ctx, &fee, |addr, proto| {
             let fee = protos::Fee::try_parse(proto)?;
-            let start = Integer::try_parse(&fee.block)?;
-            elapsed_buf.assign(&block_idx - &start);
+            let start = BlockNum::try_from(&fee.block)?;
+            let elapsed = (block_idx - start)?;
 
-            if elapsed_buf > YEAR_OF_BLOCKS {
+            if elapsed > YEAR_OF_BLOCKS {
                 let wallet_id = string!(NAMESPACE_PREFIX, WALLET, &fee.sighash);
                 let state_data = get_state_data(tx_ctx, &wallet_id)?;
                 let mut wallet = protos::Wallet::try_parse(&state_data)?;
-                wallet.amount = (Integer::try_parse(&wallet.amount)? + ctx.tx_fee()?).to_string();
+                wallet.amount = (Credo::from_wallet(&wallet)? + ctx.tx_fee()?).to_string();
 
                 let mut state_data = state_data.0;
                 state_data.clear();
@@ -1962,7 +1996,7 @@ impl CCTransaction for Housekeeping {
             Ok(())
         })?;
 
-        reward(request, tx_ctx, ctx, &last_processed_block_idx, &block_idx)?;
+        reward(request, tx_ctx, ctx, last_processed_block_idx, block_idx)?;
         tx_ctx.set_state_entry(processed_block_idx, block_idx.to_string().into_bytes())?;
 
         Ok(())

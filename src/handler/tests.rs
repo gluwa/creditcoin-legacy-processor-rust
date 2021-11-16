@@ -26,7 +26,7 @@ use crate::handler::utils::{self, calc_interest};
 use crate::{protos, string};
 
 use super::context::mocked::MockHandlerContext;
-use super::types::{Address, TxnResult};
+use super::types::{Address, BlockNum, Credo, CurrencyAmount, TxnResult};
 use super::AddAskOrder;
 use super::AddBidOrder;
 use super::AddDealOrder;
@@ -415,8 +415,8 @@ fn add_ask_order_accept() {
         amount_str: 1.to_string(),
         interest: 2.to_string(),
         maturity: 3.to_string(),
-        fee: 4.to_string(),
-        expiration: 5,
+        fee_str: 4.to_string(),
+        expiration: 5.into(),
     };
     deserialize_success(args, expected.clone());
     deserialize_success(args_uppercase, expected.clone());
@@ -430,8 +430,8 @@ fn add_ask_order_case_insensitive() {
         amount_str: 1.to_string(),
         interest: 2.to_string(),
         maturity: 3.to_string(),
-        fee: 4.to_string(),
-        expiration: 5,
+        fee_str: 4.to_string(),
+        expiration: 5.into(),
     };
     deserialize_success(args, expected);
 }
@@ -504,7 +504,7 @@ fn add_ask_order_invalid_fee() {
 fn add_ask_order_negative_expiration() {
     deserialize_failure(
         SixArgCommand::new("AddAskOrder", "addressid", 1, 2, 3, 4, -5),
-        INVALID_NUMBER_ERR,
+        NEGATIVE_NUMBER_ERR,
     );
 }
 
@@ -555,8 +555,8 @@ fn add_bid_order_accept() {
         amount_str: 1.to_string(),
         interest: 2.to_string(),
         maturity: 3.to_string(),
-        fee: 4.to_string(),
-        expiration: 5,
+        fee_str: 4.to_string(),
+        expiration: 5.into(),
     };
     deserialize_success(args, expected.clone());
     deserialize_success(args_uppercase, expected.clone());
@@ -570,8 +570,8 @@ fn add_bid_order_case_insensitive() {
         amount_str: 1.to_string(),
         interest: 2.to_string(),
         maturity: 3.to_string(),
-        fee: 4.to_string(),
-        expiration: 5,
+        fee_str: 4.to_string(),
+        expiration: 5.into(),
     };
     deserialize_success(args, expected);
 }
@@ -644,7 +644,7 @@ fn add_bid_order_invalid_fee() {
 fn add_bid_order_negative_expiration() {
     deserialize_failure(
         SixArgCommand::new("AddBidOrder", "addressid", 1, 2, 3, 4, -5),
-        INVALID_NUMBER_ERR,
+        NEGATIVE_NUMBER_ERR,
     );
 }
 
@@ -694,7 +694,7 @@ fn add_offer_accept() {
     let expected = AddOffer {
         ask_order_id: "askorder".into(),
         bid_order_id: "bidorder".into(),
-        expiration: 1,
+        expiration: 1.into(),
     };
     deserialize_success(args, expected.clone());
     deserialize_success(args_upper, expected);
@@ -706,7 +706,7 @@ fn add_offer_case_insensitive() {
     let expected = AddOffer {
         ask_order_id: "askorder".into(),
         bid_order_id: "bidorder".into(),
-        expiration: 1,
+        expiration: 1.into(),
     };
     deserialize_success(args, expected);
 }
@@ -715,7 +715,7 @@ fn add_offer_case_insensitive() {
 fn add_offer_negative_expiration() {
     deserialize_failure(
         ThreeArgCommand::new("AddOffer", "ask", "bid", -2),
-        INVALID_NUMBER_ERR,
+        NEGATIVE_NUMBER_ERR,
     );
 }
 
@@ -746,7 +746,7 @@ fn add_offer_missing_arg() {
 fn add_deal_order_accept() {
     let expected = AddDealOrder {
         offer_id: "offerid".into(),
-        expiration: 1,
+        expiration: 1.into(),
     };
     deserialize_success(
         TwoArgCommand::new("AddDealOrder", "offerid", 1),
@@ -759,7 +759,7 @@ fn add_deal_order_accept() {
 fn add_deal_order_case_insensitive() {
     let expected = AddDealOrder {
         offer_id: "offerid".into(),
-        expiration: 1,
+        expiration: 1.into(),
     };
     deserialize_success(TwoArgCommand::new("AdDdEaLoRdEr", "offerid", 1), expected);
 }
@@ -768,7 +768,7 @@ fn add_deal_order_case_insensitive() {
 fn add_deal_order_negative_expiration() {
     deserialize_failure(
         TwoArgCommand::new("AddDealOrder", "offerid", -1),
-        INVALID_NUMBER_ERR,
+        NEGATIVE_NUMBER_ERR,
     );
 }
 
@@ -949,8 +949,8 @@ fn add_repayment_order_accept() {
     let expected = AddRepaymentOrder {
         deal_order_id: "orderid".into(),
         address_id: "addressid".into(),
-        amount: "1".into(),
-        expiration: 2,
+        amount_str: "1".into(),
+        expiration: 2.into(),
     };
     deserialize_success(
         FourArgCommand::new("AddRepaymentOrder", "orderid", "addressid", 1, 2),
@@ -967,8 +967,8 @@ fn add_repayment_order_case_insensitive() {
     let expected = AddRepaymentOrder {
         deal_order_id: "orderid".into(),
         address_id: "addressid".into(),
-        amount: "1".into(),
-        expiration: 2,
+        amount_str: "1".into(),
+        expiration: 2.into(),
     };
     deserialize_success(
         FourArgCommand::new("AdDrEpAyMeNtOrDeR", "orderid", "addressid", 1, 2),
@@ -1192,7 +1192,7 @@ fn housekeeping_negative_block_idx() {
 fn housekeeping_invalid_block_idx() {
     deserialize_failure(
         OneArgCommand::new("Housekeeping", "BAD"),
-        INVALID_NUMBER_FORMAT_ERR,
+        INVALID_NUMBER_ERR,
     );
 }
 
@@ -1573,7 +1573,7 @@ fn register_transfer_success() {
         src_address: dst_address_id.clone(),
         dst_address: src_address_id.clone(),
         order: command.order_id.clone(),
-        amount: (command.gain.clone() + 1u64).to_string(),
+        amount: (command.gain.clone() + 1).to_string(),
         tx: command.blockchain_tx_id.clone(),
         sighash: my_sighash.to_string(),
         block: 0.to_string(),
@@ -1611,8 +1611,8 @@ fn add_ask_order_success() {
         amount_str: "1000".into(),
         interest: "10000".into(),
         maturity: "100".into(),
-        fee: "1".into(),
-        expiration: 10000,
+        fee_str: "1".into(),
+        expiration: 10000.into(),
     };
 
     let request = TpProcessRequest {
@@ -1655,8 +1655,8 @@ fn add_ask_order_success() {
         amount: command.amount_str.clone(),
         interest: command.interest.clone(),
         maturity: command.maturity.clone(),
-        fee: command.fee.clone(),
-        expiration: command.expiration,
+        fee: command.fee_str.clone(),
+        expiration: command.expiration.into(),
         block: (request.tip - 1).to_string(),
         sighash: my_sighash.to_string(),
     };
@@ -1687,8 +1687,8 @@ fn add_bid_order_success() {
         amount_str: "1000".into(),
         interest: "10000".into(),
         maturity: "100".into(),
-        fee: "1".into(),
-        expiration: 10000,
+        fee_str: "1".into(),
+        expiration: 10000.into(),
     };
 
     let request = TpProcessRequest {
@@ -1731,8 +1731,8 @@ fn add_bid_order_success() {
         amount: command.amount_str.clone(),
         interest: command.interest.clone(),
         maturity: command.maturity.clone(),
-        fee: command.fee.clone(),
-        expiration: command.expiration,
+        fee: command.fee_str.clone(),
+        expiration: command.expiration.into(),
         block: (request.tip - 1).to_string(),
         sighash: my_sighash.to_string(),
     };
@@ -1762,11 +1762,11 @@ fn add_offer_success() {
     let command = AddOffer {
         ask_order_id: "askorderid".into(),
         bid_order_id: "bidorderid".into(),
-        expiration: 10000,
+        expiration: 10000.into(),
     };
 
     let request = TpProcessRequest {
-        tip: 1,
+        tip: 5,
         ..Default::default()
     };
 
@@ -1850,7 +1850,7 @@ fn add_offer_success() {
         blockchain: src_address_proto.blockchain.clone(),
         ask_order: command.ask_order_id.clone(),
         bid_order: command.bid_order_id.clone(),
-        expiration: command.expiration,
+        expiration: command.expiration.into(),
         block: (request.tip - 1).to_string(),
         sighash: my_sighash.to_string(),
     };
@@ -1860,7 +1860,7 @@ fn add_offer_success() {
         vec![
             (offer_address.into(), offer.to_bytes()),
             (wallet_id.to_string(), wallet_with(Some(0)).unwrap()),
-            make_fee(&guid, &my_sighash, None),
+            make_fee(&guid, &my_sighash, Some(request.tip - 1)),
         ],
     );
 
@@ -1875,7 +1875,7 @@ fn add_deal_order_success() {
 
     let command = AddDealOrder {
         offer_id: "someofferid".into(),
-        expiration: 10000,
+        expiration: 10000.into(),
     };
 
     let request = TpProcessRequest {
@@ -1969,7 +1969,7 @@ fn add_deal_order_success() {
 
     // Make sure the fundraiser has enough wallet balance to cover the bid order fee + standard txn fee
     let wallet_id = WalletId::from(&my_sighash);
-    let balance = Integer::try_parse(&bid_order.fee).unwrap() + &*TX_FEE;
+    let balance = Credo::try_parse(&bid_order.fee).unwrap() + &*TX_FEE;
     expect!(tx_ctx, get balance at wallet_id -> Some(balance));
 
     // Construct the deal order
@@ -1981,7 +1981,7 @@ fn add_deal_order_success() {
         interest: bid_order.interest,
         maturity: bid_order.maturity,
         fee: bid_order.fee,
-        expiration: command.expiration,
+        expiration: command.expiration.into(),
         sighash: my_sighash.to_string(),
         block: (request.tip - 1).to_string(),
         ..Default::default()
@@ -2109,7 +2109,7 @@ fn complete_deal_order_success() {
     );
 
     let wallet_id = WalletId::from(&my_sighash);
-    let fee = &*TX_FEE - Integer::try_parse(&deal_order.fee).unwrap();
+    let fee = TX_FEE.clone() - Credo::try_parse(&deal_order.fee).unwrap();
     expect!(tx_ctx, get balance at wallet_id -> Some(fee));
 
     let updated_transfer = protos::Transfer {
@@ -2445,8 +2445,8 @@ fn add_repayment_order_success() {
     let command = AddRepaymentOrder {
         deal_order_id: "dealorderid".into(),
         address_id: "buyeraddressid".into(),
-        amount: 5.to_string(),
-        expiration: 10000,
+        amount_str: 5.to_string(),
+        expiration: 10000.into(),
     };
 
     let request = TpProcessRequest {
@@ -2532,8 +2532,8 @@ fn add_repayment_order_success() {
         blockchain: src_address.blockchain,
         src_address: command.address_id.clone(),
         dst_address: deal_order.src_address,
-        amount: command.amount.clone(),
-        expiration: command.expiration,
+        amount: command.amount_str.clone(),
+        expiration: command.expiration.into(),
         block: (request.tip - 1).to_string(),
         deal: command.deal_order_id.clone(),
         sighash: my_sighash.to_string(),
@@ -2821,12 +2821,12 @@ fn housekeeping_reward_in_chain() {
 
     // Housekeeeping with block idx = 0
     let command = Housekeeping {
-        block_idx: Integer::new(),
+        block_idx: BlockNum(0),
     };
 
     // Chain tip is far ahead
     let request = TpProcessRequest {
-        tip: (CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT) * 4,
+        tip: u64::from((CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT) * 4),
         ..Default::default()
     };
     let mut tx_ctx = MockTransactionContext::default();
@@ -2854,7 +2854,7 @@ fn housekeeping_reward_in_chain() {
     // housekeeping tries to get the signatures for the blocks
     // from height_start to height_end in order to issue mining rewards
     // return a dummy signer
-    for height in height_start..height_end {
+    for height in height_start.0..height_end.0 {
         let signer = format!("signer{}", height);
         signers.push(signer.clone());
         expect!(tx_ctx,
@@ -2892,7 +2892,7 @@ fn housekeeping_reward_in_chain() {
     // which in this case is height_end - 1
     expect!(tx_ctx, set_state_entry(
             addr if addr == PROCESSED_BLOCK_IDX.as_str(),
-            state if state == &(height_end - 1).to_string().into_bytes()
+            state if state == &(height_end - 1).unwrap().to_string().into_bytes()
         ) -> Ok(())
     );
 
@@ -2906,14 +2906,14 @@ fn housekeeping_reward_fork() {
 
     // Housekeeeping with block idx = 0
     let command = Housekeeping {
-        block_idx: Integer::new(),
+        block_idx: BlockNum(0),
     };
 
     let last_processed = CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT;
 
     // Chain tip is far ahead
     let request = TpProcessRequest {
-        tip: last_processed * 4,
+        tip: u64::from(last_processed * 4),
         block_signature: "headblocksig".into(),
         ..Default::default()
     };
@@ -2942,7 +2942,7 @@ fn housekeeping_reward_fork() {
 
     log::warn!("{}..{}", last_pred, first_pred);
 
-    let signers: Vec<String> = (last_pred..first_pred)
+    let signers: Vec<String> = (last_pred.0..first_pred.0)
         .map(|i| format!("signer{}", i))
         .collect();
 
@@ -3010,7 +3010,7 @@ fn housekeeping_not_enough_confirmations() {
 
     // Housekeeeping with block idx = 0
     let command = Housekeeping {
-        block_idx: Integer::new(),
+        block_idx: BlockNum(0),
     };
 
     // no blocks have been processed
@@ -3019,7 +3019,7 @@ fn housekeeping_not_enough_confirmations() {
     // Chain tip is not quite at the threshold for running because
     // the blocks have not yet gotten enough confirmations
     let request = TpProcessRequest {
-        tip: BLOCK_REWARD_PROCESSING_COUNT + 1,
+        tip: u64::from(BLOCK_REWARD_PROCESSING_COUNT + 1),
         block_signature: "headblocksig".into(),
         ..Default::default()
     };
@@ -3044,7 +3044,7 @@ fn housekeeping_within_block_reward_count() {
 
     // Housekeeeping with block idx = 0
     let command = Housekeeping {
-        block_idx: Integer::new(),
+        block_idx: BlockNum(0),
     };
 
     // pretend we've issued some rewards already
@@ -3053,7 +3053,9 @@ fn housekeeping_within_block_reward_count() {
     // Chain tip is not quite at the threshold for running because
     // fewer than BLOCK_REWARD_PROCESSING_COUNT additional blocks have been processed
     let request = TpProcessRequest {
-        tip: last_processed + BLOCK_REWARD_PROCESSING_COUNT - 1,
+        tip: (last_processed + BLOCK_REWARD_PROCESSING_COUNT.0 - 1)
+            .unwrap()
+            .into(),
         block_signature: "headblocksig".into(),
         ..Default::default()
     };

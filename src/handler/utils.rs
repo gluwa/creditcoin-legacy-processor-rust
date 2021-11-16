@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 use std::fmt::Write;
 
 use crate::ext::IntegerExt;
@@ -17,6 +18,7 @@ use crate::handler::constants::{
 use super::constants::INTEREST_MULTIPLIER;
 use super::constants::INVALID_NUMBER_ERR;
 use super::types::BlockNum;
+use super::types::CurrencyAmount;
 use super::types::State;
 use super::types::StateVec;
 use super::types::WalletId;
@@ -116,6 +118,11 @@ pub fn get_u64(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> TxnResult
         .map_err(|_| CCApplyError::InvalidTransaction(INVALID_NUMBER_ERR.into()).into())
 }
 
+pub fn get_block_num(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> TxnResult<BlockNum> {
+    let str_value = get_string(map, key, name)?;
+    BlockNum::try_from(str_value)
+}
+
 pub fn to_hex_string(bytes: &[u8]) -> String {
     let mut buf = String::with_capacity(2 * bytes.len());
     for b in bytes {
@@ -198,13 +205,14 @@ pub fn create_socket(
 }
 
 pub fn last_block(request: &TpProcessRequest) -> BlockNum {
+    // skipcq: RS-D1000
     // TODO: transitioning
     let tip = request.get_tip();
     if tip == 0 {
         log::warn!("tip was 0");
-        Integer::new()
+        BlockNum(0)
     } else {
-        Integer::from(tip - 1)
+        BlockNum(tip - 1)
     }
 }
 
@@ -252,7 +260,7 @@ pub fn add_fee(
     let fee_id = Address::with_prefix_key(super::constants::FEE, guid.as_str());
     let fee = crate::protos::Fee {
         sighash: sighash.clone().into(),
-        block: last_block(request).to_string_radix(10),
+        block: last_block(request).to_string(),
     };
     add_state(states, fee_id.into(), &fee)
 }
@@ -269,14 +277,18 @@ pub fn add_fee_state(
     add_state(states, wallet_id.clone().into(), wallet)
 }
 
-pub fn calc_interest(amount: &Integer, ticks: &Integer, interest: &Integer) -> Integer {
+pub fn calc_interest(
+    amount: &CurrencyAmount,
+    ticks: BlockNum,
+    interest: &CurrencyAmount,
+) -> CurrencyAmount {
     let mut total = amount.clone();
-    let mut i = Integer::from(0);
+    let mut i = BlockNum(0);
 
-    while &i < ticks {
+    while i < ticks {
         let compound = (total.clone() * interest) / INTEREST_MULTIPLIER;
         total += compound;
-        i += 1;
+        i += BlockNum(1);
     }
     total
 }
