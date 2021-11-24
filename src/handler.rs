@@ -2102,19 +2102,15 @@ fn reward(
             i += BlockNum(1);
         }
     } else {
-        let first = last_block_idx.to_u64().ok_or_else(|| {
-            InvalidTransaction("Block number is too large to fit in a u64".into())
-        })?;
-        let last = i.to_u64().ok_or_else(|| {
-            InvalidTransaction("Block number is too large to fit in a u64".into())
-        })?;
+        let first = last_block_idx;
+        let last = i;
 
         let signatures = tx_ctx.get_reward_block_signatures(sig, first.into(), last.into())?;
 
         info!("Rewarding {} signatures", signatures.len());
 
         for signature in &signatures {
-            award(tx_ctx, new_formula, &i, signature)?;
+            award(tx_ctx, new_formula, i, signature)?;
             i += BlockNum(1);
         }
     }
