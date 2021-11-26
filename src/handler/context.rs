@@ -110,7 +110,7 @@ impl<'tx> HandlerContext<'tx> {
             }
             Err(ContextError::AuthorizationError(_)) => {
                 log::warn!("Falling back to a client request - the settings namespace is not declared as a transaction input");
-                let state = self.tx_ctx.get_state_entries_by_prefix(&k);
+                let state = self.tx_ctx.get_state_entries_by_prefix("", &k);
                 match state {
                     Ok(state) if !state.is_empty() => {
                         let (_addr, value) = &state[0];

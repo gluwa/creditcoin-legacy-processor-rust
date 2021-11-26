@@ -2061,7 +2061,7 @@ fn award(
 }
 
 fn reward(
-    tip: &BlockNum,
+    tip: BlockNum,
     request: &TpProcessRequest,
     tx_ctx: &dyn TransactionContext,
     processed_block_idx: BlockNum,
@@ -2072,17 +2072,13 @@ fn reward(
 
     let mut new_formula = false;
 
-    // for historical reasons update block is calculated as the following:
-    let update_block: Integer;
-    if tip <= &Integer::from(LEGACY_UPDATE_BLOCK_TOP) {
-        update_block = match tip.to_i32_wrapping() {
-            LEGACY_UPDATE_BLOCK_BOTTOM..=LEGACY_UPDATE_BLOCK_TOP => Integer::from(277800),
-            _ => Integer::from(278910),
-        };
-
-        if update_block + Integer::from(500) < *processed_block_idx {
-            new_formula = true;
-        }
+    // for historical reasons update block is calculated as the following (formula switch blocks values come from the production blockchain):
+    let update_block: BlockNum = match i32::from(tip) {
+        LEGACY_UPDATE_BLOCK_BOTTOM..=LEGACY_UPDATE_BLOCK_TOP => LEGACY_FORMULA_SWITCH_BLOCK1,
+        _ => LEGACY_FORMULA_SWITCH_BLOCK2,
+    };
+    if update_block + BLOCK_REWARD_DELAY < processed_block_idx {
+        new_formula = true;
     }
 
     let last_block_idx = if up_to_block_idx == 0 {
@@ -2125,12 +2121,12 @@ fn reward(
 }
 
 fn filter(
-    tip: &BlockNum,
+    tip: BlockNum,
     tx_ctx: &dyn TransactionContext,
     prefix: &str,
     mut lister: impl FnMut(&str, &[u8]) -> TxnResult<()>,
 ) -> TxnResult<()> {
-    let tip_id = string!("#", tip.to_string_radix(10));
+    let tip_id = string!("#", String::from(tip));
     let states = tx_ctx.get_state_entries_by_prefix(&tip_id, prefix)?;
     for (address, data) in states {
         lister(&address, &data)?;
@@ -2139,10 +2135,7 @@ fn filter(
     Ok(())
 }
 
-fn verify_gateway_signer(
-    my_sighash: &str,
-    ctx: &mut HandlerContext,
-) -> TxnResult<()> {
+fn verify_gateway_signer(my_sighash: &str, ctx: &mut HandlerContext) -> TxnResult<()> {
     let s = ctx.get_setting("sawtooth.gateway.sighash")?;
     if let Some(val) = s {
         if val == my_sighash {
@@ -2178,20 +2171,18 @@ impl CCTransaction for Housekeeping {
             })?)?
         };
 
-        let tip: &BlockNum = &last_block(request);
+        let tip: BlockNum = last_block(request);
 
         if block_idx == 0 {
-            if last_processed_block_idx.clone()
-                + CONFIRMATION_COUNT * 2
-                + BLOCK_REWARD_PROCESSING_COUNT
-                < *tip
+            if last_processed_block_idx + CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT
+                < tip
             {
                 reward(
                     tip,
                     request,
                     tx_ctx,
-                    &last_processed_block_idx,
-                    &Integer::new(),
+                    last_processed_block_idx,
+                    BlockNum::new(),
                 )?;
                 tx_ctx.set_state_entry(
                     processed_block_idx,
@@ -2203,14 +2194,14 @@ impl CCTransaction for Housekeeping {
             return Ok(());
         }
 
+        let my_sighash = ctx.sighash(request)?;
+        verify_gateway_signer(&my_sighash, ctx)?;
+
         if block_idx < CONFIRMATION_COUNT * 2 || block_idx <= last_processed_block_idx {
             return Ok(());
         }
 
-        let my_sighash = ctx.sighash(request)?;
-        verify_gateway_signer(&my_sighash, ctx)?;
-
-        if block_idx >= tip.clone() - CONFIRMATION_COUNT {
+        if block_idx >= (tip - CONFIRMATION_COUNT)? {
             info!("Premature processing");
             return Ok(());
         }
@@ -2254,7 +2245,7 @@ impl CCTransaction for Housekeeping {
             let start = BlockNum::try_from(&deal_order.block)?;
             let elapsed = (block_idx - start)?;
             if deal_order.expiration < elapsed && deal_order.loan_transfer.is_empty() {
-                if *tip > DEAL_EXP_FIX_BLOCK {
+                if tip > DEAL_EXP_FIX_BLOCK {
                     let wallet_id = string!(NAMESPACE_PREFIX, WALLET, &deal_order.sighash);
                     let state_data = get_state_data(tx_ctx, &wallet_id)?;
                     let mut wallet = protos::Wallet::try_parse(&state_data)?;
@@ -2307,7 +2298,7 @@ impl CCTransaction for Housekeeping {
             Ok(())
         })?;
 
-        reward(tip, request, tx_ctx, ctx, last_processed_block_idx, block_idx)?;
+        reward(tip, request, tx_ctx, last_processed_block_idx, block_idx)?;
         tx_ctx.set_state_entry(processed_block_idx, block_idx.to_string().into_bytes())?;
 
         Ok(())
