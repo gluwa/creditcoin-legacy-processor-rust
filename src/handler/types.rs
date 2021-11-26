@@ -443,6 +443,20 @@ impl TryFrom<&str> for BlockNum {
     }
 }
 
+#[test]
+fn try_from_str_for_blocknum_works_as_expected() {
+    assert_eq!(BlockNum::try_from("8").unwrap(), BlockNum(8));
+
+    let result = BlockNum::try_from("-5").unwrap_err();
+
+    match result.downcast_ref::<CCApplyError>() {
+        Some(CCApplyError::InvalidTransaction(s)) => {
+            assert_eq!(s, NEGATIVE_NUMBER_ERR);
+        }
+        _ => panic!("unexpected error"),
+    };
+}
+
 impl TryFrom<&String> for BlockNum {
     type Error = anyhow::Error;
 
