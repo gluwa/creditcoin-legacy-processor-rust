@@ -47,6 +47,7 @@ mock! {
 
         fn get_state_entries_by_prefix(
             &self,
+            tip_id: &str,
             address: &str,
         ) -> Result<Vec<(String, Vec<u8>)>, sawtooth_sdk::processor::handler::ContextError> ;
     }
