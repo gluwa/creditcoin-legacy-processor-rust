@@ -3195,11 +3195,7 @@ fn housekeeping_reward_in_chain() {
         ))
     );
 
-    // pretend update1 is not set
     let mut ctx = MockHandlerContext::default();
-    expect!(ctx,
-        get_setting(k if k == "sawtooth.validator.update1") -> Ok(None)
-    );
 
     let height_start = CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT + 1;
     let height_end = height_start + BLOCK_REWARD_PROCESSING_COUNT;
@@ -3283,12 +3279,7 @@ fn housekeeping_reward_fork() {
         ))
     );
 
-    // pretend update1 is not set
     let mut ctx = MockHandlerContext::default();
-    expect!(ctx,
-        get_setting(k if k == "sawtooth.validator.update1") -> Ok(None)
-    );
-
     // the get_reward_block_signatures path iterates in reverse inclusively, so if last_processed = 5
     // and BLOCK_REWARD_PROCESSING_COUNT = 5, then the bounds
     // should be [10, 6] i.e. [last_processed + BLOCK_REWARD_PROCESSING_COUNT, last_processed+1]

@@ -891,7 +891,7 @@ dependencies = [
 [[package]]
 name = "sawtooth-sdk-creditcoin"
 version = "0.5.1"
-source = "git+https://github.com/gluwa/sawtooth-sdk-rust?branch=dev#b8bf91423f8c2334a9f80f96df8c60d5e8b87ec2"
+source = "git+https://github.com/gluwa/sawtooth-sdk-rust?branch=dev#8a3d99fa2c82eb3131148931a819ffca46d78c66"
 dependencies = [
  "ctrlc",
  "glob",
