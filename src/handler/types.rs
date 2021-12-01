@@ -1,5 +1,6 @@
 use anyhow::Context;
 use derive_more::{Add, AddAssign, Display, Div, Mul, Sub, SubAssign};
+use log::error;
 use std::convert::TryFrom;
 use std::fmt;
 use std::ops::{Add, Sub};
@@ -423,17 +424,37 @@ impl TryFrom<&str> for BlockNum {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        println!("value = {:?}", value);
         if value.contains('-') {
-            println!("It's negative!");
+            error!(
+                "Negative value: {:?} found while parsing to BlockNum",
+                value,
+            );
             return Err(CCApplyError::InvalidTransaction(NEGATIVE_NUMBER_ERR.into()))?;
         }
-        Ok(BlockNum(value.parse::<u64>().map_err(|_e| {
+        Ok(BlockNum(value.parse::<u64>().map_err(|e| {
+            error!(
+                "Failed parsing value: {:?} into BlockNum with error {}",
+                value, e
+            );
             anyhow::Error::from(CCApplyError::InvalidTransaction(
                 INVALID_NUMBER_FORMAT_ERR.into(),
             ))
         })?))
     }
+}
+
+#[test]
+fn try_from_str_for_blocknum_works_as_expected() {
+    assert_eq!(BlockNum::try_from("8").unwrap(), BlockNum(8));
+
+    let result = BlockNum::try_from("-5").unwrap_err();
+
+    match result.downcast_ref::<CCApplyError>() {
+        Some(CCApplyError::InvalidTransaction(s)) => {
+            assert_eq!(s, NEGATIVE_NUMBER_ERR);
+        }
+        _ => panic!("unexpected error"),
+    };
 }
 
 impl TryFrom<&String> for BlockNum {
