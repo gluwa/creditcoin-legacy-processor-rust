@@ -41,7 +41,7 @@ prost-build = "0.8.0"
 enclose = "1.1.8"
 itertools = "0.10.1"
 mockall = "0.10.2"
-paste = "1.0.5"
+paste = "1.0.6"
 serde = { version = "1.0.126", features = ["derive"] }
 
 [features]
