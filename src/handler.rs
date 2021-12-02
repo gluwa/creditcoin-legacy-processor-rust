@@ -22,7 +22,7 @@ use context::HandlerContext;
 use context::mocked::MockHandlerContext as HandlerContext;
 
 use constants::*;
-use log::{debug, info};
+use log::{debug, info, trace};
 use rug::{Assign, Integer};
 use sawtooth_sdk::{
     messages::processor::TpProcessRequest,
@@ -194,7 +194,7 @@ impl TryFrom<Value> for CCCommand {
     fn try_from(value: Value) -> TxnResult<Self, Self::Error> {
         if let Value::Map(map) = value {
             let verb = get_string(&map, "v", "verb")?;
-            debug!("verb = {}", verb);
+            debug!("command = {}", verb);
             Ok(match verb.to_uppercase().as_str() {
                 "SENDFUNDS" => {
                     let amount = Credo(get_integer(&map, "p1", "amount")?);
@@ -1958,10 +1958,7 @@ impl CCTransaction for CollectCoins {
         ]
         .join(" ");
 
-        //  FOR DEVELOPMENT, REMOVE FOR DEPLOYMENT
-        if self.eth_address != "unused_if_hacked" {
-            ctx.verify(&gateway_command)?;
-        }
+        ctx.verify(&gateway_command)?;
 
         let wallet_id = WalletId::from(&my_sighash);
 
@@ -1974,13 +1971,11 @@ impl CCTransaction for CollectCoins {
             let wallet = Wallet::try_parse(&state_data)?;
             let mut balance = Credo::from_wallet(&wallet)?;
             balance += &self.amount;
-            info!("New amount = {}", balance);
+            trace!("CollectCoins: new amount for {:?} = {}", wallet_id, balance);
             protos::Wallet {
                 amount: balance.to_string(),
             }
         };
-
-        info!("Wallet id = {:?}", wallet_id);
 
         let mut states = vec![];
         add_state(&mut states, wallet_id.into(), &wallet)?;
@@ -2036,9 +2031,7 @@ fn award(
     if reward > 0 {
         let signer_sighash = utils::sha512_id(signer.as_bytes());
         let wallet_id = string!(NAMESPACE_PREFIX.as_str(), WALLET, &signer_sighash);
-        info!("checking wallet with id {}", wallet_id);
         let state_data = try_get_state_data(tx_ctx, &wallet_id)?.unwrap_or_default();
-        info!("got state data");
         let wallet = if state_data.is_empty() {
             Wallet { amount: reward_str }
         } else {
@@ -2053,9 +2046,7 @@ fn award(
         wallet
             .encode(&mut buf)
             .map_err(|e| InvalidTransaction(format!("Failed to add state : {}", e)))?;
-        info!("parsed proto");
         tx_ctx.set_state_entry(wallet_id, buf)?;
-        info!("set entry");
     }
     Ok(())
 }
@@ -2067,7 +2058,10 @@ fn reward(
     processed_block_idx: BlockNum,
     up_to_block_idx: BlockNum,
 ) -> TxnResult<()> {
-    info!("rewarding!");
+    debug!(
+        "issuing block rewards for blocks starting at {}",
+        processed_block_idx + 1
+    );
     assert!(up_to_block_idx == 0 || up_to_block_idx > processed_block_idx);
 
     let mut new_formula = false;
@@ -2095,7 +2089,7 @@ fn reward(
 
             let signer = tx_ctx.get_sig_by_num(height.into())?;
 
-            info!("rewarding signer {} for block {}", signer, height);
+            trace!("rewarding signer {} for block {}", signer, height);
 
             award(tx_ctx, new_formula, i, &signer)?;
             i += BlockNum(1);
@@ -2103,10 +2097,16 @@ fn reward(
     } else {
         let first = last_block_idx;
         let last = i;
+        trace!(
+            "getting signatures for blocks {} through {} with tip {}",
+            first,
+            last,
+            sig
+        );
 
         let signatures = tx_ctx.get_reward_block_signatures(sig, first.into(), last.into())?;
 
-        info!("Rewarding {} signatures", signatures.len());
+        trace!("Rewarding {} signatures", signatures.len());
 
         for signature in &signatures {
             award(tx_ctx, new_formula, i, signature)?;
