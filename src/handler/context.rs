@@ -162,7 +162,7 @@ impl<'tx> HandlerContext<'tx> {
         let address = self.get_setting("sawtooth.validator.gateway")?;
 
         if let Some(mut external_gateway_address) = address {
-            log::info!("Found external gateway address");
+            log::debug!("Found external gateway address");
 
             if !external_gateway_address.starts_with("tcp://") {
                 external_gateway_address.insert_str(0, "tcp://");
