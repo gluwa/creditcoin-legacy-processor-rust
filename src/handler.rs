@@ -198,7 +198,7 @@ impl TryFrom<Value> for CCCommand {
             Ok(match verb.to_uppercase().as_str() {
                 "SENDFUNDS" => {
                     let amount = Credo(get_integer(&map, "p1", "amount")?);
-                    let sighash = SigHash(get_string(&map, "p2", "sighash")?.clone());
+                    let sighash = SigHash(get_string(&map, "p2", "sighash")?.to_lowercase());
                     SendFunds { amount, sighash }.into()
                 }
 
