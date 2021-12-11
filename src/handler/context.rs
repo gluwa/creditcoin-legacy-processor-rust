@@ -24,6 +24,7 @@ pub struct HandlerContext<'tx> {
     gateway_endpoint: String,
     tx_ctx: &'tx dyn TransactionContext,
     tx_fee: OnceCell<Credo>,
+    request: &'tx TpProcessRequest,
 }
 
 const MAX_KEY_PARTS: usize = 4;
@@ -56,6 +57,7 @@ impl<'tx> HandlerContext<'tx> {
         gateway_context: zmq::Context,
         gateway_endpoint: String,
         tx_ctx: &'tx dyn TransactionContext,
+        request: &'tx TpProcessRequest,
     ) -> TxnResult<Self> {
         Ok(Self {
             #[cfg(not(all(test, feature = "mock")))]
@@ -68,6 +70,7 @@ impl<'tx> HandlerContext<'tx> {
             gateway_endpoint,
             tx_ctx,
             tx_fee: OnceCell::new(),
+            request,
         })
     }
 
@@ -101,37 +104,43 @@ impl<'tx> HandlerContext<'tx> {
     pub fn get_setting(&self, key: &str) -> TxnResult<Option<String>> {
         log::debug!("getting setting for key {:?}", key);
         let k = make_settings_key(key);
-        let state = self.tx_ctx.get_state_entry(&k);
-        match state {
-            Ok(Some(value)) => Self::find_setting(&value, key),
-            Ok(None) => {
-                log::debug!("no setting found for key {:?}", key);
-                Ok(None)
-            }
-            Err(ContextError::AuthorizationError(_)) => {
-                log::warn!("Falling back to a client request - the settings namespace is not declared as a transaction input");
-                let state = self.tx_ctx.get_state_entries_by_prefix("", &k);
-                match state {
-                    Ok(state) if !state.is_empty() => {
-                        let (_addr, value) = &state[0];
-                        Self::find_setting(value, key)
-                    }
-                    Ok(state) if state.is_empty() => {
-                        log::debug!("setting not found for key {:?}", key);
-                        Ok(None)
-                    }
-                    Err(ContextError::ResponseAttributeError(_)) => {
-                        log::debug!(
-                            "received response attribute error, setting not found for key {:?}",
-                            key
-                        );
-                        Ok(None)
-                    }
-                    Err(e) => Err(e.into()),
-                    _ => unreachable!(),
+        let inputs = self.request.get_header().get_inputs();
+        let client_request = !inputs.into_iter().any(|s| k.starts_with(s));
+        if client_request {
+            log::warn!("Falling back to a client request - the settings namespace is not declared as a transaction input");
+            let state = self.tx_ctx.get_state_entries_by_prefix("", &k);
+            match state {
+                Ok(state) if !state.is_empty() => {
+                    let (_addr, value) = &state[0];
+                    Self::find_setting(value, key)
                 }
+                Ok(state) if state.is_empty() => {
+                    log::debug!("setting not found for key {:?}", key);
+                    Ok(None)
+                }
+                Err(ContextError::ResponseAttributeError(_)) => {
+                    log::debug!(
+                        "received response attribute error, setting not found for key {:?}",
+                        key
+                    );
+                    Ok(None)
+                }
+                Err(e) => {
+                    log::error!("other error {} received getting setting {:?}", e, key);
+                    Err(e.into())
+                }
+                _ => unreachable!(),
             }
-            Err(e) => Err(e.into()),
+        } else {
+            let state = self.tx_ctx.get_state_entry(&k);
+            match state {
+                Ok(Some(value)) => Self::find_setting(&value, key),
+                Ok(None) => {
+                    log::debug!("no setting found for key {:?}", key);
+                    Ok(None)
+                }
+                Err(e) => Err(e.into()),
+            }
         }
     }
 
@@ -241,6 +250,7 @@ pub mod mocked {
                 gateway_context: zmq::Context,
                 gateway_endpoint: String,
                 tx_ctx: &dyn TransactionContext,
+                request: &TpProcessRequest,
             ) -> TxnResult<Self>;
 
             pub fn tip(&self) -> u64;
@@ -265,15 +275,21 @@ pub mod mocked {
 mod tests {
     use super::HandlerContext;
     use crate::handler::{
-        constants::{TX_FEE, TX_FEE_KEY},
+        constants::{SETTINGS_NAMESPACE, TX_FEE, TX_FEE_KEY},
         tests::mocked::MockTransactionContext,
         types::Credo,
     };
+    use sawtooth_sdk::messages::processor::TpProcessRequest;
     use sawtooth_sdk::messages::Message;
     #[test]
     fn tx_fee_fetches_from_chain() {
         let zmq_context = zmq::Context::new();
         let mut mock_tx_ctx = MockTransactionContext::default();
+        let mut request = TpProcessRequest::default();
+        request
+            .mut_header()
+            .mut_inputs()
+            .push(String::from(SETTINGS_NAMESPACE));
         let k = super::make_settings_key(TX_FEE_KEY);
         let k = &*Box::leak(k.into_boxed_str());
         let mut setting = sawtooth_sdk::messages::setting::Setting::new();
@@ -286,8 +302,13 @@ mod tests {
             .expect_get_state_entry()
             .with(mockall::predicate::eq(k))
             .returning(move |_| Ok(Some(serialized.clone())));
-        let context =
-            HandlerContext::create(zmq_context, "tcp://dummy:8080".into(), &mock_tx_ctx).unwrap();
+        let context = HandlerContext::create(
+            zmq_context,
+            "tcp://dummy:8080".into(),
+            &mock_tx_ctx,
+            &request,
+        )
+        .unwrap();
         let result = context.tx_fee().unwrap().clone();
         assert_eq!(result, Credo(1.into()));
     }
@@ -297,12 +318,22 @@ mod tests {
         let mut mock_tx_ctx = MockTransactionContext::default();
         let k = super::make_settings_key(TX_FEE_KEY);
         let k = &*Box::leak(k.into_boxed_str());
+        let mut request = TpProcessRequest::default();
+        request
+            .mut_header()
+            .mut_inputs()
+            .push(String::from(SETTINGS_NAMESPACE));
         mock_tx_ctx
             .expect_get_state_entry()
             .with(mockall::predicate::eq(k))
             .returning(move |_| Ok(None));
-        let context =
-            HandlerContext::create(zmq_context, "tcp://dummy:8080".into(), &mock_tx_ctx).unwrap();
+        let context = HandlerContext::create(
+            zmq_context,
+            "tcp://dummy:8080".into(),
+            &mock_tx_ctx,
+            &request,
+        )
+        .unwrap();
         let result = context.tx_fee().unwrap().clone();
         assert_eq!(&result, &*TX_FEE);
     }
