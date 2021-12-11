@@ -2119,11 +2119,12 @@ fn reward(
 
 fn filter(
     tip: BlockNum,
+    previous_block_id: &str,
     tx_ctx: &dyn TransactionContext,
     prefix: &str,
     mut lister: impl FnMut(&str, &[u8]) -> TxnResult<()>,
 ) -> TxnResult<()> {
-    let tip_id = string!("#", String::from(tip));
+    let tip_id = string!("#", String::from(tip), "@", previous_block_id);
     let states = tx_ctx.get_state_entries_by_prefix(&tip_id, prefix)?;
     for (address, data) in states {
         lister(&address, &data)?;
@@ -2169,6 +2170,7 @@ impl CCTransaction for Housekeeping {
         };
 
         let tip: BlockNum = last_block(request);
+        let previous_block_id = request.get_block_signature();
 
         if block_idx == 0 {
             if last_processed_block_idx + CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT
@@ -2204,7 +2206,7 @@ impl CCTransaction for Housekeeping {
         }
 
         let ask = string!(NAMESPACE_PREFIX, ASK_ORDER);
-        filter(tip, tx_ctx, &ask, |addr, proto| {
+        filter(tip, previous_block_id, tx_ctx, &ask, |addr, proto| {
             let ask_order = protos::AskOrder::try_parse(proto)?;
             let start = BlockNum::try_from(&ask_order.block)?;
             let elapsed = (block_idx - start)?;
@@ -2215,7 +2217,7 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let bid = string!(NAMESPACE_PREFIX, BID_ORDER);
-        filter(tip, tx_ctx, &bid, |addr, proto| {
+        filter(tip, previous_block_id, tx_ctx, &bid, |addr, proto| {
             let bid_order = protos::BidOrder::try_parse(proto)?;
             let start = BlockNum::try_from(&bid_order.block)?;
             let elapsed = (block_idx - start)?;
@@ -2226,7 +2228,7 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let offer = string!(NAMESPACE_PREFIX, OFFER);
-        filter(tip, tx_ctx, &offer, |addr, proto| {
+        filter(tip, previous_block_id, tx_ctx, &offer, |addr, proto| {
             let offer = protos::Offer::try_parse(proto)?;
             let start = BlockNum::try_from(&offer.block)?;
             let elapsed = (block_idx - start)?;
@@ -2237,7 +2239,7 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let deal = string!(NAMESPACE_PREFIX, DEAL_ORDER);
-        filter(tip, tx_ctx, &deal, |addr, proto| {
+        filter(tip, previous_block_id, tx_ctx, &deal, |addr, proto| {
             let deal_order = protos::DealOrder::try_parse(proto)?;
             let start = BlockNum::try_from(&deal_order.block)?;
             let elapsed = (block_idx - start)?;
@@ -2260,7 +2262,7 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let repay = string!(NAMESPACE_PREFIX, REPAYMENT_ORDER);
-        filter(tip, tx_ctx, &repay, |addr, proto| {
+        filter(tip, previous_block_id, tx_ctx, &repay, |addr, proto| {
             let repayment_order = protos::RepaymentOrder::try_parse(proto)?;
             let start = BlockNum::try_from(&repayment_order.block)?;
             let elapsed = (block_idx - start)?;
@@ -2271,7 +2273,7 @@ impl CCTransaction for Housekeeping {
         })?;
 
         let fee = string!(NAMESPACE_PREFIX, FEE);
-        filter(tip, tx_ctx, &fee, |addr, proto| {
+        filter(tip, previous_block_id, tx_ctx, &fee, |addr, proto| {
             let fee = protos::Fee::try_parse(proto)?;
             let start = BlockNum::try_from(&fee.block)?;
             let elapsed = (block_idx - start)?;
