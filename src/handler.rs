@@ -2359,6 +2359,7 @@ impl TransactionHandler for CCTransactionHandler {
             self.zmq_context.clone(),
             self.gateway_endpoint.clone(),
             &*context,
+            request,
         )
         .log_err()
         .to_apply_error()?;
