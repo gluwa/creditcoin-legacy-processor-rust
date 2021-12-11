@@ -71,7 +71,7 @@ impl From<&str> for SigHash {
 
 impl SigHash {
     pub fn to_wallet_id(&self) -> WalletId {
-        let wallet_id = string!(NAMESPACE_PREFIX, WALLET, self);
+        let wallet_id = string!(NAMESPACE_PREFIX, WALLET, self.to_lowercase());
         wallet_id.into()
     }
     pub fn from_public_key(key: &str) -> TxnResult<SigHash> {
