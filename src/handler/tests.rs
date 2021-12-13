@@ -280,7 +280,19 @@ fn send_funds_case_insensitive() {
             amount: 1.into(),
             sighash: SigHash("foo".into()),
         },
-    )
+    );
+
+    let value = value::to_value(TwoArgCommand::new("SendFunds", 1, "Foo-Bar")).unwrap();
+
+    let result = CCCommand::try_from(value).unwrap();
+    assert_eq!(
+        result,
+        SendFunds {
+            amount: 1.into(),
+            sighash: SigHash("foo-bar".into()),
+        }
+        .into(),
+    );
 }
 
 #[test]
