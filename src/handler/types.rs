@@ -81,6 +81,15 @@ impl SigHash {
     }
 }
 
+#[test]
+fn sighash_to_wallet_id_always_returns_lowercase() {
+    let sighash = SigHash::from("-InvestoR-SighasH");
+    assert_eq!(
+        sighash.to_wallet_id().to_string(),
+        "8a1a040000-investor-sighash"
+    );
+}
+
 impl Deref for SigHash {
     type Target = String;
 
