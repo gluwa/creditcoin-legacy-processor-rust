@@ -105,7 +105,7 @@ impl<'tx> HandlerContext<'tx> {
         log::debug!("getting setting for key {:?}", key);
         let k = make_settings_key(key);
         let inputs = self.request.get_header().get_inputs();
-        let client_request = !inputs.into_iter().any(|s| k.starts_with(s));
+        let client_request = !inputs.iter().any(|s| k.starts_with(s));
         if client_request {
             log::warn!("Falling back to a client request - the settings namespace is not declared as a transaction input");
             let state = self.tx_ctx.get_state_entries_by_prefix("", &k);
