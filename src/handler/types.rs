@@ -452,6 +452,85 @@ impl TryFrom<&str> for BlockNum {
     }
 }
 
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, From, Default, Mul, Div, Add, AddAssign,
+)]
+pub struct BlockInterval(pub i128);
+
+impl Div<BlockInterval> for BlockInterval {
+    type Output = BlockInterval;
+
+    fn div(self, rhs: BlockInterval) -> Self::Output {
+        BlockInterval(self.0 / rhs.0)
+    }
+}
+
+impl PartialEq<u64> for BlockInterval {
+    fn eq(&self, other: &u64) -> bool {
+        self.0.eq(&i128::from(*other))
+    }
+}
+
+impl PartialOrd<u64> for BlockInterval {
+    fn partial_cmp(&self, other: &u64) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&i128::from(*other))
+    }
+}
+
+impl PartialEq<BlockInterval> for u64 {
+    fn eq(&self, other: &BlockInterval) -> bool {
+        i128::from(*self).eq(&other.0)
+    }
+}
+
+impl PartialOrd<BlockInterval> for u64 {
+    fn partial_cmp(&self, other: &BlockInterval) -> Option<std::cmp::Ordering> {
+        i128::from(*self).partial_cmp(&other.0)
+    }
+}
+
+impl From<u64> for BlockInterval {
+    fn from(val: u64) -> Self {
+        Self(val.into())
+    }
+}
+
+impl BlockInterval {
+    pub fn from_blocknum(num: BlockNum) -> Self {
+        Self(num.0.into())
+    }
+}
+
+impl fmt::Display for BlockInterval {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl PartialEq<BlockNum> for BlockInterval {
+    fn eq(&self, other: &BlockNum) -> bool {
+        self.0 == i128::from(other.0)
+    }
+}
+
+impl PartialOrd<BlockNum> for BlockInterval {
+    fn partial_cmp(&self, other: &BlockNum) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&i128::from(other.0))
+    }
+}
+
+impl PartialEq<BlockInterval> for BlockNum {
+    fn eq(&self, other: &BlockInterval) -> bool {
+        i128::from(self.0) == other.0
+    }
+}
+
+impl PartialOrd<BlockInterval> for BlockNum {
+    fn partial_cmp(&self, other: &BlockInterval) -> Option<std::cmp::Ordering> {
+        i128::from(self.0).partial_cmp(&other.0)
+    }
+}
+
 #[test]
 fn try_from_str_for_blocknum_works_as_expected() {
     assert_eq!(BlockNum::try_from("8").unwrap(), BlockNum(8));
