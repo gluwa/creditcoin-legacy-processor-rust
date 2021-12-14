@@ -3255,7 +3255,7 @@ fn housekeeping_reward_in_chain() {
     // which in this case is height_end - 1
     expect!(tx_ctx, set_state_entry(
             addr if addr == PROCESSED_BLOCK_IDX.as_str(),
-            state if state == &(height_end - 1).unwrap().to_string().into_bytes()
+            state if state == &(height_end - 1).to_string().into_bytes()
         ) -> Ok(())
     );
 
@@ -3398,6 +3398,7 @@ fn housekeeping_not_enough_confirmations() {
 
 #[test]
 fn housekeeping_within_block_reward_count() {
+    use std::convert::TryInto;
     init_logs();
 
     // Housekeeeping with block idx = 0
@@ -3412,8 +3413,9 @@ fn housekeeping_within_block_reward_count() {
     // fewer than BLOCK_REWARD_PROCESSING_COUNT additional blocks have been processed
     let request = TpProcessRequest {
         tip: (last_processed + BLOCK_REWARD_PROCESSING_COUNT.0 - 1)
-            .unwrap()
-            .into(),
+            .0
+            .try_into()
+            .unwrap(),
         block_signature: "headblocksig".into(),
         ..Default::default()
     };
