@@ -275,6 +275,7 @@ pub mod mocked {
 mod tests {
     use super::HandlerContext;
     use crate::handler::{
+        add_state,
         constants::{SETTINGS_NAMESPACE, TX_FEE, TX_FEE_KEY},
         tests::mocked::MockTransactionContext,
         types::Credo,
@@ -336,5 +337,61 @@ mod tests {
         .unwrap();
         let result = context.tx_fee().unwrap().clone();
         assert_eq!(&result, &*TX_FEE);
+    }
+
+    #[test]
+    fn get_setting_falls_back_and_returns_none_when_state_is_empty() {
+        let zmq_context = zmq::Context::new();
+        let mut mock_tx_ctx = MockTransactionContext::default();
+        let request = TpProcessRequest::default();
+
+        mock_tx_ctx
+            .expect_get_state_entries_by_prefix()
+            .returning(move |_, _| Ok(Vec::new()));
+
+        let context = HandlerContext::create(
+            zmq_context,
+            "tcp://dummy:8080".into(),
+            &mock_tx_ctx,
+            &request,
+        )
+        .unwrap();
+
+        let result = context.get_setting("foo").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Failed to parse setting from bytes: incorrect tag")]
+    fn get_setting_falls_back_and_tries_parsing_value_when_state_is_not_empty() {
+        let zmq_context = zmq::Context::new();
+        let mut mock_tx_ctx = MockTransactionContext::default();
+        let request = TpProcessRequest::default();
+
+        let mut states = Vec::new();
+        let _ = add_state(
+            &mut states,
+            "address-1".to_string(),
+            &"value-foo".to_string(),
+        );
+        let _ = add_state(
+            &mut states,
+            "address-2".to_string(),
+            &"value-bar".to_string(),
+        );
+
+        mock_tx_ctx
+            .expect_get_state_entries_by_prefix()
+            .returning(move |_, _| Ok(states.clone()));
+
+        let context = HandlerContext::create(
+            zmq_context,
+            "tcp://dummy:8080".into(),
+            &mock_tx_ctx,
+            &request,
+        )
+        .unwrap();
+
+        let _result = context.get_setting("foo").unwrap();
     }
 }
