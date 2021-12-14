@@ -17,12 +17,12 @@ use crate::handler::constants::{
 
 use super::constants::INTEREST_MULTIPLIER;
 use super::constants::INVALID_NUMBER_FORMAT_ERR;
-use super::types::BlockNum;
 use super::types::CurrencyAmount;
 use super::types::State;
 use super::types::StateVec;
 use super::types::WalletId;
 use super::types::{Address, CCApplyError};
+use super::types::{BlockInterval, BlockNum};
 use super::types::{SigHash, TxnResult};
 use super::HandlerContext;
 
@@ -293,16 +293,16 @@ pub fn add_fee_state(
 
 pub fn calc_interest(
     amount: &CurrencyAmount,
-    ticks: BlockNum,
+    ticks: BlockInterval,
     interest: &CurrencyAmount,
 ) -> CurrencyAmount {
     let mut total = amount.clone();
-    let mut i = BlockNum(0);
+    let mut i = 0;
 
     while i < ticks {
         let compound = (total.clone() * interest) / INTEREST_MULTIPLIER;
         total += compound;
-        i += BlockNum(1);
+        i += 1;
     }
     total
 }

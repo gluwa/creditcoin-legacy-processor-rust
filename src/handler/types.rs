@@ -561,26 +561,20 @@ impl Add<u64> for BlockNum {
     }
 }
 impl Sub<u64> for BlockNum {
-    type Output = TxnResult<BlockNum>;
+    type Output = BlockInterval;
 
     fn sub(self, rhs: u64) -> Self::Output {
-        Ok(Self(self.0.checked_sub(rhs).ok_or_else(|| {
-            CCApplyError::InvalidTransaction(
-                "The subtraction would have resulted in overflow".into(),
-            )
-        })?))
+        let rhs = BlockNum(rhs);
+        self.sub(rhs)
     }
 }
 
 impl Sub<BlockNum> for BlockNum {
-    type Output = TxnResult<BlockNum>;
+    type Output = BlockInterval;
 
     fn sub(self, rhs: BlockNum) -> Self::Output {
-        Ok(Self(self.0.checked_sub(rhs.0).ok_or_else(|| {
-            CCApplyError::InvalidTransaction(
-                "The subtraction would have resulted in overflow".into(),
-            )
-        })?))
+        let diff = i128::from(self.0) - i128::from(rhs.0);
+        BlockInterval(diff)
     }
 }
 
