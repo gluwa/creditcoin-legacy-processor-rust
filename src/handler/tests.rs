@@ -1597,6 +1597,15 @@ fn expect_set_state_entries(tx_ctx: &mut MockTransactionContext, entries: Vec<(S
     }, returning |_| Ok(()));
 }
 
+fn expect_delete_state_entry(tx_ctx: &mut MockTransactionContext, entry: impl AsRef<str>) {
+    let entry = String::from(entry.as_ref());
+    tx_ctx
+        .expect_delete_state_entry()
+        .once()
+        .withf(move |e| e == entry)
+        .return_once(|_| Ok(None));
+}
+
 fn expect_delete_state_entries(tx_ctx: &mut MockTransactionContext, entries: Vec<String>) {
     tx_ctx
         .expect_delete_state_entries()
@@ -3396,6 +3405,67 @@ fn housekeeping_not_enough_confirmations() {
     command.execute(&request, &tx_ctx, &mut ctx).unwrap();
 }
 
+fn expect_get_last_processed_block(
+    tx_ctx: &mut MockTransactionContext,
+    last_processed: impl Into<Integer> + Send + 'static,
+) {
+    expect!(tx_ctx,
+        get_state_entry(k if k == PROCESSED_BLOCK_IDX.as_str())
+        -> Ok(Some(
+            last_processed.into().to_string().into_bytes()
+        ))
+    );
+}
+
+fn expect_set_last_processed_block(
+    tx_ctx: &mut MockTransactionContext,
+    last_processed: impl Into<Integer> + Send + 'static,
+) {
+    let last_processed = last_processed.into().to_string().into_bytes();
+    tx_ctx
+        .expect_set_state_entry()
+        .once()
+        .withf(move |address, value| {
+            address == PROCESSED_BLOCK_IDX.as_str() && value == &last_processed
+        })
+        .returning(|_, _| Ok(()));
+}
+
+fn expect_get_state_entries_by_prefix<M: MessageExt<M> + Send>(
+    tx_ctx: &mut MockTransactionContext,
+    tip_number: u64,
+    prefix: &str,
+    entries: Vec<(&str, M)>,
+) {
+    let tip_id = string!("#", (tip_number - 1).to_string());
+    let prefix = prefix.to_string();
+    let ret = entries
+        .into_iter()
+        .map(|(suffix, proto)| {
+            let address = string!(&prefix, suffix);
+            (address, proto.to_bytes())
+        })
+        .collect();
+    tx_ctx
+        .expect_get_state_entries_by_prefix()
+        .with(
+            mockall::predicate::function(move |tip: &str| tip.starts_with(&tip_id)),
+            mockall::predicate::function(move |address| address == prefix.clone()),
+        )
+        .once()
+        .return_once(|_, _| Ok(ret));
+}
+
+fn expect_get_setting(ctx: &mut MockHandlerContext, key: &str, value: Option<&str>) {
+    let key = String::from(key);
+    let value = value.map(String::from);
+
+    ctx.expect_get_setting()
+        .withf(move |k| k == key)
+        .once()
+        .return_once(move |_| Ok(value));
+}
+
 #[test]
 fn housekeeping_within_block_reward_count() {
     use std::convert::TryInto;
@@ -3422,16 +3492,201 @@ fn housekeeping_within_block_reward_count() {
     let mut tx_ctx = MockTransactionContext::default();
 
     // Housekeeping should check the last processed block, then bail out
-    expect!(tx_ctx,
-        get_state_entry(k if k == PROCESSED_BLOCK_IDX.as_str())
-        -> Ok(Some(
-            Integer::from(last_processed).to_string().into_bytes()
-        ))
-    );
+    expect_get_last_processed_block(&mut tx_ctx, last_processed);
 
     let mut ctx = MockHandlerContext::default();
 
     // execute housekeeping
+    command.execute(&request, &tx_ctx, &mut ctx).unwrap();
+}
+
+#[test]
+fn housekeeping_removes_expired_entries() {
+    init_logs();
+
+    let command = Housekeeping {
+        block_idx: BlockNum(200),
+    };
+
+    let sighash = SigHash::from("sighash");
+
+    let last_processed = BlockNum(130);
+
+    let request = TpProcessRequest {
+        tip: 250,
+        block_signature: "headblocksig".into(),
+        ..Default::default()
+    };
+
+    let mut tx_ctx = MockTransactionContext::default();
+
+    let ask = string!(NAMESPACE_PREFIX, ASK_ORDER);
+    let bid = string!(NAMESPACE_PREFIX, BID_ORDER);
+    let offer = string!(NAMESPACE_PREFIX, OFFER);
+    let deal = string!(NAMESPACE_PREFIX, DEAL_ORDER);
+    let repay = string!(NAMESPACE_PREFIX, REPAYMENT_ORDER);
+    let fee = string!(NAMESPACE_PREFIX, FEE);
+
+    expect_get_last_processed_block(&mut tx_ctx, last_processed);
+
+    {
+        expect_get_state_entries_by_prefix(
+            &mut tx_ctx,
+            request.tip,
+            &ask,
+            vec![
+                (
+                    "shouldbedeleted",
+                    protos::AskOrder {
+                        expiration: 50,
+                        block: "100".into(),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "shouldnotbedeleted",
+                    protos::AskOrder {
+                        expiration: 500,
+                        block: "220".into(),
+                        ..Default::default()
+                    },
+                ),
+            ],
+        );
+
+        expect_delete_state_entry(&mut tx_ctx, string!(&ask, "shouldbedeleted"));
+    }
+
+    {
+        expect_get_state_entries_by_prefix(
+            &mut tx_ctx,
+            request.tip,
+            &bid,
+            vec![
+                (
+                    "shouldbedeleted",
+                    protos::BidOrder {
+                        block: "110".into(),
+                        expiration: 30,
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "shouldnotbedeleted",
+                    protos::BidOrder {
+                        block: "220".into(),
+                        expiration: 300,
+                        ..Default::default()
+                    },
+                ),
+            ],
+        );
+
+        expect_delete_state_entry(&mut tx_ctx, string!(&bid, "shouldbedeleted"));
+    }
+
+    {
+        expect_get_state_entries_by_prefix(
+            &mut tx_ctx,
+            request.tip,
+            &offer,
+            vec![
+                (
+                    "shouldbedeleted",
+                    protos::Offer {
+                        block: "110".into(),
+                        expiration: 30,
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "shouldnotbedeleted",
+                    protos::Offer {
+                        block: "220".into(),
+                        expiration: 300,
+                        ..Default::default()
+                    },
+                ),
+            ],
+        );
+
+        expect_delete_state_entry(&mut tx_ctx, string!(&offer, "shouldbedeleted"));
+    }
+
+    {
+        expect_get_state_entries_by_prefix(
+            &mut tx_ctx,
+            request.tip,
+            &deal,
+            vec![
+                (
+                    "shouldbedeleted",
+                    protos::DealOrder {
+                        block: "110".into(),
+                        expiration: 30,
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "shouldnotbedeleted",
+                    protos::DealOrder {
+                        block: "220".into(),
+                        expiration: 300,
+                        ..Default::default()
+                    },
+                ),
+            ],
+        );
+
+        expect_delete_state_entry(&mut tx_ctx, string!(&deal, "shouldbedeleted"));
+    }
+
+    {
+        expect_get_state_entries_by_prefix(
+            &mut tx_ctx,
+            request.tip,
+            &repay,
+            vec![
+                (
+                    "shouldbedeleted",
+                    protos::RepaymentOrder {
+                        block: "110".into(),
+                        expiration: 30,
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "shouldnotbedeleted",
+                    protos::RepaymentOrder {
+                        block: "220".into(),
+                        expiration: 300,
+                        ..Default::default()
+                    },
+                ),
+            ],
+        );
+
+        expect_delete_state_entry(&mut tx_ctx, string!(&repay, "shouldbedeleted"));
+    }
+
+    {
+        expect_get_state_entries_by_prefix::<protos::Fee>(&mut tx_ctx, request.tip, &fee, vec![]);
+    }
+
+    tx_ctx
+        .expect_get_reward_block_signatures()
+        .once()
+        .return_once(|_, _, _| Ok(vec![]));
+
+    expect_set_last_processed_block(&mut tx_ctx, command.block_idx);
+
+    let mut ctx = MockHandlerContext::default();
+    expect!(
+        ctx, sighash -> sighash
+    );
+
+    expect_get_setting(&mut ctx, "sawtooth.gateway.sighash", Some(sighash.as_str()));
+
     command.execute(&request, &tx_ctx, &mut ctx).unwrap();
 }
 
