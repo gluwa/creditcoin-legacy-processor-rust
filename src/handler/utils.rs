@@ -153,7 +153,18 @@ pub fn sha512<B: AsRef<[u8]>>(bytes: B) -> String {
 }
 
 pub fn is_hex(s: &str) -> bool {
-    s.contains(|c: char| !(c.is_numeric() || ('a'..'f').contains(&c) || ('A'..'F').contains(&c)))
+    s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+#[test]
+fn is_hex_accepts_hex() {
+    assert!(is_hex("abcdefABCDEF1234567890"));
+    assert!(is_hex(""));
+}
+
+#[test]
+fn is_hex_rejects_nonhex() {
+    assert!(!is_hex("g1234567890"));
 }
 
 pub fn compress(uncompressed: &str) -> TxnResult<String> {
