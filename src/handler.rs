@@ -2007,7 +2007,7 @@ fn award(
         let pos = fraction_str.find('.').unwrap();
         assert!(pos > 0);
 
-        let fraction_in_wei_str = if fraction_str.starts_with('0') {
+        let fraction_in_wei_str = if !fraction_str.starts_with('0') {
             format!("{}{:0<18}", &fraction_str[..pos], &fraction_str[pos + 1..])
         } else {
             let mut pos = 2;
