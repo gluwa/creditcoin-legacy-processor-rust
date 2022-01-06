@@ -2007,9 +2007,7 @@ fn award(
         let pos = fraction_str.find('.').unwrap();
         assert!(pos > 0);
 
-        let fraction_in_wei_str = if !fraction_str.starts_with('0') {
-            format!("{}{:0<18}", &fraction_str[..pos], &fraction_str[pos + 1..])
-        } else {
+        let fraction_in_wei_str = if fraction_str.starts_with('0') {
             let mut pos = 2;
             for c in fraction_str.bytes().skip(pos) {
                 if c == b'0' {
@@ -2019,6 +2017,8 @@ fn award(
                 }
             }
             format!("{:0<width$}", &fraction_str[pos..], width = 20 - pos)
+        } else {
+            format!("{}{:0<18}", &fraction_str[..pos], &fraction_str[pos + 1..])
         };
 
         reward.assign(Credo::try_parse(&fraction_in_wei_str)? * 28);
