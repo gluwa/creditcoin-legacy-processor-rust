@@ -26,7 +26,7 @@ use log::{debug, info, trace};
 use rug::Integer;
 use sawtooth_sdk::{
     messages::processor::TpProcessRequest,
-    processor::handler::{ApplyError, TransactionContext, TransactionHandler},
+    processor::handler::{ApplyError, ContextError, TransactionContext, TransactionHandler},
     signing::{secp256k1, Context},
 };
 
@@ -2061,12 +2061,16 @@ fn filter(
     mut lister: impl FnMut(&str, &[u8]) -> TxnResult<()>,
 ) -> TxnResult<()> {
     let tip_id = string!("#", String::from(tip), "@", previous_block_id);
-    let states = tx_ctx.get_state_entries_by_prefix(&tip_id, prefix)?;
-    for (address, data) in states {
-        lister(&address, &data)?;
+    match tx_ctx.get_state_entries_by_prefix(&tip_id, prefix) {
+        Ok(states) => {
+            for (address, data) in states {
+                lister(&address, &data)?;
+            }
+            Ok(())
+        }
+        Err(ContextError::ResponseAttributeError(_)) => Ok(()),
+        Err(e) => Err(e.into()),
     }
-
-    Ok(())
 }
 
 fn verify_gateway_signer(my_sighash: &str, ctx: &mut HandlerContext) -> TxnResult<()> {
