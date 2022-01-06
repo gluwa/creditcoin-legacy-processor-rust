@@ -117,7 +117,11 @@ pub fn get_u64(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> TxnResult
 
 pub fn get_block_num(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> TxnResult<BlockNum> {
     let str_value = get_string(map, key, name)?;
-    BlockNum::try_from(str_value)
+    if str_value.is_empty() {
+        Ok(BlockNum::new())
+    } else {
+        BlockNum::try_from(str_value)
+    }
 }
 
 pub fn to_hex_string(bytes: &[u8]) -> String {
