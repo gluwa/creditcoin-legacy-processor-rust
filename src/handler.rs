@@ -2138,12 +2138,14 @@ fn verify_gateway_signer(my_sighash: &str, ctx: &mut HandlerContext) -> TxnResul
     if let Some(val) = s {
         if val == my_sighash {
             return Ok(());
+        } else {
+            bail_transaction!(
+                "Restricted transaction",
+                context = "Only a priveleged user can run Housekeeping with a non-zero parameter"
+            );
         }
     }
-    bail_transaction!(
-        "Restricted transaction",
-        context = "Only a priveleged user can run Housekeeping with a non-zero parameter"
-    );
+    Ok(())
 }
 
 impl CCTransaction for Housekeeping {
