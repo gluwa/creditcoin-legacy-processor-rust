@@ -124,6 +124,25 @@ pub fn get_block_num(map: &BTreeMap<Value, Value>, key: &str, name: &str) -> Txn
     }
 }
 
+#[test]
+fn get_block_num_basic() {
+    let mut map = BTreeMap::new();
+    map.insert(Value::Text("key".into()), Value::Text("3".into()));
+
+    assert_eq!(
+        get_block_num(&map, "key", "name").unwrap(),
+        BlockNum::from(3)
+    );
+}
+
+#[test]
+fn get_block_num_empty_string() {
+    let mut map = BTreeMap::new();
+    map.insert(Value::Text("key".into()), Value::Text(String::new()));
+
+    assert_eq!(get_block_num(&map, "key", "name").unwrap(), BlockNum::new());
+}
+
 pub fn to_hex_string(bytes: &[u8]) -> String {
     let mut buf = String::with_capacity(2 * bytes.len());
     for b in bytes {
