@@ -54,6 +54,7 @@ pub trait ErrorExt: Sized {
     type Return;
     fn to_apply_error(self) -> Self::Return;
 
+    #[must_use]
     fn log_err(self) -> Self;
 }
 
