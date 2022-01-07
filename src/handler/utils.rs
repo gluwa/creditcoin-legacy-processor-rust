@@ -381,7 +381,7 @@ fn calc_reward(new_formula: bool, block_idx: BlockNum) -> TxnResult<Credo> {
     } else {
         reward.assign(&*REWARD_AMOUNT);
     }
-    Ok(reward.into())
+    Ok(reward)
 }
 
 #[test]
