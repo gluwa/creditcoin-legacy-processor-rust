@@ -8,8 +8,8 @@ use crate::{
     bail_transaction,
     ext::{ErrorExt, IntegerExt, MessageExt},
     handler::utils::{
-        add_fee, get_block_num, get_integer, get_integer_string, get_signed_integer, get_string,
-        last_block,
+        add_fee, award, get_block_num, get_integer, get_integer_string, get_signed_integer,
+        get_string, last_block,
     },
     protos, string,
 };
@@ -23,7 +23,7 @@ use context::mocked::MockHandlerContext as HandlerContext;
 
 use constants::*;
 use log::{debug, info, trace};
-use rug::{Assign, Integer};
+use rug::Integer;
 use sawtooth_sdk::{
     messages::processor::TpProcessRequest,
     processor::handler::{ApplyError, TransactionContext, TransactionHandler},
@@ -1985,70 +1985,6 @@ impl CCTransaction for CollectCoins {
 
         Ok(())
     }
-}
-
-fn award(
-    tx_ctx: &dyn TransactionContext,
-    new_formula: bool,
-    block_idx: BlockNum,
-    signer: &str,
-) -> TxnResult<()> {
-    let mut buf = Integer::new();
-    let mut reward = Credo::new();
-
-    if new_formula {
-        buf.assign((block_idx / BLOCKS_IN_PERIOD_UPDATE1).0);
-
-        let period = buf.to_i32().ok_or_else(|| {
-            InvalidTransaction("Block number is too large to fit in an i32".into())
-        })?;
-        let fraction = (19.0f64 / 20.0f64).powi(period);
-        let fraction_str = format!("{:.6}", fraction);
-        let pos = fraction_str.find('.').unwrap();
-        assert!(pos > 0);
-
-        let fraction_in_wei_str = if fraction_str.starts_with('0') {
-            let mut pos = 2;
-            for c in fraction_str.bytes().skip(pos) {
-                if c == b'0' {
-                    pos += 1;
-                } else {
-                    break;
-                }
-            }
-            format!("{:0<width$}", &fraction_str[pos..], width = 20 - pos)
-        } else {
-            format!("{}{:0<18}", &fraction_str[..pos], &fraction_str[pos + 1..])
-        };
-
-        reward.assign(Credo::try_parse(&fraction_in_wei_str)? * 28);
-    } else {
-        reward.assign(&*REWARD_AMOUNT);
-    }
-
-    let reward_str = reward.to_string();
-
-    if reward > 0 {
-        let signer_sighash = utils::sha512_id(signer.as_bytes());
-        let wallet_id = string!(NAMESPACE_PREFIX.as_str(), WALLET, &signer_sighash);
-        let state_data = try_get_state_data(tx_ctx, &wallet_id)?.unwrap_or_default();
-        let wallet = if state_data.is_empty() {
-            Wallet { amount: reward_str }
-        } else {
-            let wallet = Wallet::try_parse(&state_data)?;
-            let balance = Credo::from_wallet(&wallet)? + reward;
-            Wallet {
-                amount: balance.to_string(),
-            }
-        };
-
-        let mut buf = Vec::with_capacity(wallet.encoded_len());
-        wallet
-            .encode(&mut buf)
-            .map_err(|e| InvalidTransaction(format!("Failed to add state : {}", e)))?;
-        tx_ctx.set_state_entry(wallet_id, buf)?;
-    }
-    Ok(())
 }
 
 fn reward(

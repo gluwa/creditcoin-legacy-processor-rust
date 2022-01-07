@@ -3,8 +3,12 @@ use std::convert::TryFrom;
 use std::fmt::Write;
 
 use crate::ext::IntegerExt;
+use crate::ext::MessageExt;
+use crate::handler::constants::BLOCKS_IN_PERIOD_UPDATE1;
+use crate::protos::Wallet;
 
 use prost::Message;
+use rug::Assign;
 use rug::Integer;
 use sawtooth_sdk::messages::processor::TpProcessRequest;
 use sawtooth_sdk::processor::handler::TransactionContext;
@@ -17,6 +21,9 @@ use crate::handler::constants::{
 
 use super::constants::INTEREST_MULTIPLIER;
 use super::constants::INVALID_NUMBER_FORMAT_ERR;
+use super::constants::REWARD_AMOUNT;
+use super::types::CCApplyError::InvalidTransaction;
+use super::types::Credo;
 use super::types::CurrencyAmount;
 use super::types::State;
 use super::types::StateVec;
@@ -339,4 +346,72 @@ pub fn calc_interest(
         i += 1;
     }
     total
+}
+
+fn calc_reward(new_formula: bool, block_idx: BlockNum) -> TxnResult<Credo> {
+    let mut buf = Integer::new();
+    let mut reward = Credo::new();
+
+    if new_formula {
+        buf.assign((block_idx / BLOCKS_IN_PERIOD_UPDATE1).0);
+
+        let period = buf.to_i32().ok_or_else(|| {
+            InvalidTransaction("Block number is too large to fit in an i32".into())
+        })?;
+        let fraction = (19.0f64 / 20.0f64).powi(period);
+        let fraction_str = format!("{:.6}", fraction);
+        let pos = fraction_str.find('.').unwrap();
+        assert!(pos > 0);
+
+        let fraction_in_wei_str = if fraction_str.starts_with('0') {
+            let mut pos = 2;
+            for c in fraction_str.bytes().skip(pos) {
+                if c == b'0' {
+                    pos += 1;
+                } else {
+                    break;
+                }
+            }
+            format!("{:0<width$}", &fraction_str[pos..], width = 20 - pos)
+        } else {
+            format!("{}{:0<18}", &fraction_str[..pos], &fraction_str[pos + 1..])
+        };
+
+        reward.assign(Credo::try_parse(&fraction_in_wei_str)? * 28u64);
+    } else {
+        reward.assign(&*REWARD_AMOUNT);
+    }
+    Ok(reward.into())
+}
+
+pub(crate) fn award(
+    tx_ctx: &dyn TransactionContext,
+    new_formula: bool,
+    block_idx: BlockNum,
+    signer: &str,
+) -> TxnResult<()> {
+    let reward = calc_reward(new_formula, block_idx)?;
+    let reward_str = reward.to_string();
+
+    if reward > 0 {
+        let sighash = SigHash::from_public_key(signer)?;
+        let wallet_id = sighash.to_wallet_id();
+        let state_data = try_get_state_data(tx_ctx, &wallet_id)?.unwrap_or_default();
+        let wallet = if state_data.is_empty() {
+            Wallet { amount: reward_str }
+        } else {
+            let wallet = Wallet::try_parse(&state_data)?;
+            let balance = Credo::from_wallet(&wallet)? + reward;
+            Wallet {
+                amount: balance.to_string(),
+            }
+        };
+
+        let mut buf = Vec::with_capacity(wallet.encoded_len());
+        wallet
+            .encode(&mut buf)
+            .map_err(|e| InvalidTransaction(format!("Failed to add state : {}", e)))?;
+        tx_ctx.set_state_entry(wallet_id.into(), buf)?;
+    }
+    Ok(())
 }
