@@ -1444,7 +1444,7 @@ impl CCTransaction for RegisterDealOrder {
             Err(err) => {
                 return Err(anyhow::Error::from(InvalidTransaction(format!(
                     "Error occurred when verifying the fundraiser signature : {}",
-                    err.to_string()
+                    err
                 ))))
                 .with_context(|| {
                     format!(
