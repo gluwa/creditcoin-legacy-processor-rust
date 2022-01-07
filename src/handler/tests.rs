@@ -3227,7 +3227,7 @@ fn housekeeping_reward_in_chain() {
     // from height_start to height_end in order to issue mining rewards
     // return a dummy signer
     for height in height_start.0..height_end.0 {
-        let signer = format!("signer{}", height);
+        let signer = format!("02{:0<64}", height);
         signers.push(signer.clone());
         expect!(tx_ctx,
             get_sig_by_num(h if *h == height) -> Ok(signer)
@@ -3310,7 +3310,7 @@ fn housekeeping_reward_fork() {
     log::warn!("{}..{}", last_pred, first_pred);
 
     let signers: Vec<String> = (last_pred.0..first_pred.0)
-        .map(|i| format!("signer{}", i))
+        .map(|i| format!("02{:0<64}", i))
         .collect();
 
     let signers_ = signers.clone();
