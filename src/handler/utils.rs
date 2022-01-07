@@ -384,6 +384,24 @@ fn calc_reward(new_formula: bool, block_idx: BlockNum) -> TxnResult<Credo> {
     Ok(reward.into())
 }
 
+#[test]
+fn reward_calculation_old_formula() {
+    assert_eq!(calc_reward(false, BlockNum(1)).unwrap(), &*REWARD_AMOUNT);
+}
+
+#[test]
+fn reward_calculation_new_formula() {
+    assert_eq!(
+        calc_reward(true, BlockNum(1)).unwrap(),
+        Credo::try_parse("1_000_000_000_000_000_000").unwrap() * 28
+    );
+
+    assert_eq!(
+        calc_reward(true, BLOCKS_IN_PERIOD_UPDATE1).unwrap(),
+        Credo::try_parse("950_000_000_000_000_000").unwrap() * 28
+    );
+}
+
 pub(crate) fn award(
     tx_ctx: &dyn TransactionContext,
     new_formula: bool,
