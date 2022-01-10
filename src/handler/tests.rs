@@ -23,6 +23,7 @@ use crate::handler::constants::*;
 use crate::handler::types::{CCApplyError, SigHash};
 use crate::handler::types::{Guid, WalletId};
 use crate::handler::utils::{self, calc_interest};
+use crate::handler::verify_gateway_signer;
 use crate::{protos, string};
 
 use super::context::mocked::MockHandlerContext;
@@ -3688,6 +3689,31 @@ fn housekeeping_removes_expired_entries() {
     expect_get_setting(&mut ctx, "sawtooth.gateway.sighash", Some(sighash.as_str()));
 
     command.execute(&request, &tx_ctx, &mut ctx).unwrap();
+}
+
+#[test]
+fn verify_gateway_signer_returns_ok_when_setting_not_found() {
+    let sighash = SigHash::from("sighash");
+    let mut ctx = MockHandlerContext::default();
+
+    ctx.expect_get_setting()
+        .withf(move |k| k == "sawtooth.gateway.sighash")
+        .once()
+        .return_once(move |_| Ok(None));
+
+    let result = verify_gateway_signer(&sighash, &mut ctx).unwrap();
+    assert_eq!(result, ());
+}
+
+#[test]
+#[should_panic(expected = "Only a priveleged user can run Housekeeping with a non-zero parameter")]
+fn verify_gateway_signer_bails_when_sighash_doesnt_match() {
+    let sighash = SigHash::from("sighash");
+    let mut ctx = MockHandlerContext::default();
+
+    expect_get_setting(&mut ctx, "sawtooth.gateway.sighash", Some("do-not-match"));
+
+    verify_gateway_signer(&sighash, &mut ctx).unwrap();
 }
 
 const NONE: Option<protos::Wallet> = None;
