@@ -2117,6 +2117,7 @@ impl CCTransaction for Housekeeping {
         let (major, minor) = utils::transaction_version(request)?;
 
         // this behavior on block_idx == 0 was introduced in the Creditcoin family version 1.7
+        #[allow(clippy::collapsible_if)]
         if major >= 2 || (major == 1 && minor >= 7) {
             if block_idx == 0 {
                 if last_processed_block_idx + CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT
