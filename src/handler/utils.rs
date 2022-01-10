@@ -261,6 +261,63 @@ pub fn last_block(request: &TpProcessRequest) -> BlockNum {
     }
 }
 
+pub type Major = u64;
+pub type Minor = u64;
+pub fn transaction_version(request: &TpProcessRequest) -> TxnResult<(Major, Minor)> {
+    let version = request.get_header().get_family_version();
+    parse_major_minor(version)
+}
+
+fn parse_major_minor(version: &str) -> TxnResult<(Major, Minor)> {
+    let mut parts = version.split('.').take(2);
+    match (parts.next(), parts.next()) {
+        (Some(major), Some(minor)) => {
+            let major = major.parse::<u64>().map_err(|e| {
+                CCApplyError::InvalidTransaction(format!(
+                    "the major version {} of the transaction version is invalid: {}",
+                    major, &e
+                ))
+            })?;
+            let minor = minor.parse::<u64>().map_err(|e| {
+                CCApplyError::InvalidTransaction(format!(
+                    "the minor version {} of the transaction version is invalid: {}",
+                    minor, &e
+                ))
+            })?;
+            Ok((major, minor))
+        }
+        (Some(_), None) => {
+            bail_transaction!(
+                "transaction family version is invalid",
+                context = "the version {} is missing a minor version",
+                version
+            );
+        }
+        (None, Some(_)) => {
+            unreachable!("a version cannot have a minor version without a major version")
+        }
+        (None, None) => {
+            bail_transaction!(
+                "transaction family version is invalid",
+                context = "the version {:?} is empty",
+                version
+            );
+        }
+    }
+}
+
+#[test]
+fn parse_major_minor_cases() {
+    assert_eq!(parse_major_minor("1.2").unwrap(), (1, 2));
+    assert_eq!(parse_major_minor("1.2.4").unwrap(), (1, 2));
+    assert_eq!(parse_major_minor("0.0").unwrap(), (0, 0));
+    assert!(parse_major_minor("1").is_err());
+    assert!(parse_major_minor(".").is_err());
+    assert!(parse_major_minor("bad.1").is_err());
+    assert!(parse_major_minor("1.bad").is_err());
+    assert!(parse_major_minor("bad.bad").is_err());
+}
+
 pub fn get_state_data<A: AsRef<str>>(
     tx_ctx: &dyn TransactionContext,
     address: A,
