@@ -2220,30 +2220,32 @@ impl CCTransaction for Housekeeping {
             Ok(())
         })?;
 
-        let fee = string!(NAMESPACE_PREFIX, FEE);
-        filter(tip, previous_block_id, tx_ctx, &fee, |addr, proto| {
-            let fee = protos::Fee::try_parse(proto)?;
-            let start = BlockNum::try_from(&fee.block)?;
-            let elapsed = block_idx - start;
+        if block_idx >= YEAR_OF_BLOCKS {
+            let fee = string!(NAMESPACE_PREFIX, FEE);
+            filter(tip, previous_block_id, tx_ctx, &fee, |addr, proto| {
+                let fee = protos::Fee::try_parse(proto)?;
+                let start = BlockNum::try_from(&fee.block)?;
+                let elapsed = block_idx - start;
 
-            if elapsed > YEAR_OF_BLOCKS {
-                let wallet_id = string!(NAMESPACE_PREFIX, WALLET, &fee.sighash);
-                let state_data = get_state_data(tx_ctx, &wallet_id)?;
-                let mut wallet = protos::Wallet::try_parse(&state_data)?;
-                wallet.amount = (Credo::from_wallet(&wallet)? + ctx.tx_fee()?).to_string();
+                if elapsed > YEAR_OF_BLOCKS {
+                    let wallet_id = string!(NAMESPACE_PREFIX, WALLET, &fee.sighash);
+                    let state_data = get_state_data(tx_ctx, &wallet_id)?;
+                    let mut wallet = protos::Wallet::try_parse(&state_data)?;
+                    wallet.amount = (Credo::from_wallet(&wallet)? + ctx.tx_fee()?).to_string();
 
-                let mut state_data = state_data.0;
-                state_data.clear();
-                state_data.reserve(wallet.encoded_len());
-                wallet
-                    .encode(&mut state_data)
-                    .map_err(|e| InvalidTransaction(format!("Failed to encode wallet : {}", e)))?;
+                    let mut state_data = state_data.0;
+                    state_data.clear();
+                    state_data.reserve(wallet.encoded_len());
+                    wallet.encode(&mut state_data).map_err(|e| {
+                        InvalidTransaction(format!("Failed to encode wallet : {}", e))
+                    })?;
 
-                tx_ctx.set_state_entry(wallet_id, state_data)?;
-                tx_ctx.delete_state_entry(addr)?;
-            }
-            Ok(())
-        })?;
+                    tx_ctx.set_state_entry(wallet_id, state_data)?;
+                    tx_ctx.delete_state_entry(addr)?;
+                }
+                Ok(())
+            })?;
+        }
 
         reward(tip, request, tx_ctx, last_processed_block_idx, block_idx)?;
         tx_ctx.set_state_entry(processed_block_idx, block_idx.to_string().into_bytes())?;
