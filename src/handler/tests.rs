@@ -3202,10 +3202,11 @@ fn housekeeping_reward_in_chain() {
     };
 
     // Chain tip is far ahead
-    let request = TpProcessRequest {
+    let mut request = TpProcessRequest {
         tip: u64::from((CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT) * 4),
         ..Default::default()
     };
+    request.mut_header().set_family_version("2.0".into());
     let mut tx_ctx = MockTransactionContext::default();
 
     // get_state_entry should be called on the processed_block_idx address, and we will return
@@ -3285,11 +3286,12 @@ fn housekeeping_reward_fork() {
     let last_processed = CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT;
 
     // Chain tip is far ahead
-    let request = TpProcessRequest {
+    let mut request = TpProcessRequest {
         tip: u64::from(last_processed * 4),
         block_signature: "headblocksig".into(),
         ..Default::default()
     };
+    request.mut_header().set_family_version("2.0".into());
     let mut tx_ctx = MockTransactionContext::default();
 
     // get_state_entry should be called on the processed_block_idx address, and we will return
@@ -3386,11 +3388,12 @@ fn housekeeping_not_enough_confirmations() {
 
     // Chain tip is not quite at the threshold for running because
     // the blocks have not yet gotten enough confirmations
-    let request = TpProcessRequest {
+    let mut request = TpProcessRequest {
         tip: u64::from(BLOCK_REWARD_PROCESSING_COUNT + 1),
         block_signature: "headblocksig".into(),
         ..Default::default()
     };
+    request.mut_header().set_family_version("2.0".into());
     let mut tx_ctx = MockTransactionContext::default();
 
     expect!(tx_ctx,
@@ -3482,7 +3485,7 @@ fn housekeeping_within_block_reward_count() {
 
     // Chain tip is not quite at the threshold for running because
     // fewer than BLOCK_REWARD_PROCESSING_COUNT additional blocks have been processed
-    let request = TpProcessRequest {
+    let mut request = TpProcessRequest {
         tip: (last_processed + BLOCK_REWARD_PROCESSING_COUNT.0 - 1)
             .0
             .try_into()
@@ -3490,6 +3493,7 @@ fn housekeeping_within_block_reward_count() {
         block_signature: "headblocksig".into(),
         ..Default::default()
     };
+    request.mut_header().set_family_version("2.0".into());
     let mut tx_ctx = MockTransactionContext::default();
 
     // Housekeeping should check the last processed block, then bail out
@@ -3513,11 +3517,12 @@ fn housekeeping_removes_expired_entries() {
 
     let last_processed = BlockNum(130);
 
-    let request = TpProcessRequest {
+    let mut request = TpProcessRequest {
         tip: 250,
         block_signature: "headblocksig".into(),
         ..Default::default()
     };
+    request.mut_header().set_family_version("2.0".into());
 
     let mut tx_ctx = MockTransactionContext::default();
 
