@@ -3675,10 +3675,6 @@ fn housekeeping_removes_expired_entries() {
         expect_delete_state_entry(&mut tx_ctx, string!(&repay, "shouldbedeleted"));
     }
 
-    {
-        expect_get_state_entries_by_prefix::<protos::Fee>(&mut tx_ctx, request.tip, &fee, vec![]);
-    }
-
     tx_ctx
         .expect_get_reward_block_signatures()
         .once()
