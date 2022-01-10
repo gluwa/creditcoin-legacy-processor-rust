@@ -2114,25 +2114,30 @@ impl CCTransaction for Housekeeping {
         let tip: BlockNum = last_block(request);
         let previous_block_id = request.get_block_signature();
 
-        if block_idx == 0 {
-            if last_processed_block_idx + CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT
-                < tip
-            {
-                reward(
-                    tip,
-                    request,
-                    tx_ctx,
-                    last_processed_block_idx,
-                    BlockNum::new(),
-                )?;
-                tx_ctx.set_state_entry(
-                    processed_block_idx,
-                    (last_processed_block_idx + BLOCK_REWARD_PROCESSING_COUNT)
-                        .to_string()
-                        .into_bytes(),
-                )?;
+        let (major, minor) = utils::transaction_version(request)?;
+
+        // this behavior on block_idx == 0 was introduced in the Creditcoin family version 1.7
+        if major >= 2 || (major == 1 && minor >= 7) {
+            if block_idx == 0 {
+                if last_processed_block_idx + CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT
+                    < tip
+                {
+                    reward(
+                        tip,
+                        request,
+                        tx_ctx,
+                        last_processed_block_idx,
+                        BlockNum::new(),
+                    )?;
+                    tx_ctx.set_state_entry(
+                        processed_block_idx,
+                        (last_processed_block_idx + BLOCK_REWARD_PROCESSING_COUNT)
+                            .to_string()
+                            .into_bytes(),
+                    )?;
+                }
+                return Ok(());
             }
-            return Ok(());
         }
 
         let my_sighash = ctx.sighash(request)?;
