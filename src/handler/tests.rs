@@ -3531,7 +3531,6 @@ fn housekeeping_removes_expired_entries() {
     let offer = string!(NAMESPACE_PREFIX, OFFER);
     let deal = string!(NAMESPACE_PREFIX, DEAL_ORDER);
     let repay = string!(NAMESPACE_PREFIX, REPAYMENT_ORDER);
-    let fee = string!(NAMESPACE_PREFIX, FEE);
 
     expect_get_last_processed_block(&mut tx_ctx, last_processed);
 
