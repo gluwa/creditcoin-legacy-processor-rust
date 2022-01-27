@@ -7,6 +7,7 @@ use crate::ext::MessageExt;
 use crate::handler::constants::BLOCKS_IN_PERIOD_UPDATE1;
 use crate::protos::Wallet;
 
+use log::trace;
 use prost::Message;
 use rug::Assign;
 use rug::Integer;
@@ -473,6 +474,7 @@ pub(crate) fn award(
         let wallet_id = sighash.to_wallet_id();
         let state_data = try_get_state_data(tx_ctx, &wallet_id)?.unwrap_or_default();
         let wallet = if state_data.is_empty() {
+            trace!("Setting up new wallet wallet_id={:?}", wallet_id);
             Wallet { amount: reward_str }
         } else {
             let wallet = Wallet::try_parse(&state_data)?;
