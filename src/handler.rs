@@ -2043,7 +2043,7 @@ fn reward(
         let signatures = tx_ctx.get_reward_block_signatures(sig, first.into(), last.into())?;
 
         trace!("Rewarding {} signatures", signatures.len());
-        if signatures.len() < 1 {
+        if signatures.is_empty() {
             bail_transaction!(
                 "No signatures found",
                 context = "No signatures found for block range {} through {}",
