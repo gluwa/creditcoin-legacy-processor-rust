@@ -3692,6 +3692,193 @@ fn housekeeping_removes_expired_entries() {
 }
 
 #[test]
+#[should_panic(expected = "No signatures found for block")]
+fn housekeeping_reward_bails_out_if_no_signatures_found() {
+    init_logs();
+
+    let command = Housekeeping {
+        block_idx: BlockNum(200),
+    };
+
+    let sighash = SigHash::from("sighash");
+
+    let last_processed = BlockNum(130);
+
+    let mut request = TpProcessRequest {
+        tip: 250,
+        block_signature: "headblocksig".into(),
+        ..Default::default()
+    };
+    request.mut_header().set_family_version("2.0".into());
+
+    let mut tx_ctx = MockTransactionContext::default();
+
+    let ask = string!(NAMESPACE_PREFIX, ASK_ORDER);
+    let bid = string!(NAMESPACE_PREFIX, BID_ORDER);
+    let offer = string!(NAMESPACE_PREFIX, OFFER);
+    let deal = string!(NAMESPACE_PREFIX, DEAL_ORDER);
+    let repay = string!(NAMESPACE_PREFIX, REPAYMENT_ORDER);
+
+    expect_get_last_processed_block(&mut tx_ctx, last_processed);
+
+    {
+        expect_get_state_entries_by_prefix(
+            &mut tx_ctx,
+            request.tip,
+            &ask,
+            vec![
+                (
+                    "shouldbedeleted",
+                    protos::AskOrder {
+                        expiration: 50,
+                        block: "100".into(),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "shouldnotbedeleted",
+                    protos::AskOrder {
+                        expiration: 500,
+                        block: "220".into(),
+                        ..Default::default()
+                    },
+                ),
+            ],
+        );
+
+        expect_delete_state_entry(&mut tx_ctx, string!(&ask, "shouldbedeleted"));
+    }
+
+    {
+        expect_get_state_entries_by_prefix(
+            &mut tx_ctx,
+            request.tip,
+            &bid,
+            vec![
+                (
+                    "shouldbedeleted",
+                    protos::BidOrder {
+                        block: "110".into(),
+                        expiration: 30,
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "shouldnotbedeleted",
+                    protos::BidOrder {
+                        block: "220".into(),
+                        expiration: 300,
+                        ..Default::default()
+                    },
+                ),
+            ],
+        );
+
+        expect_delete_state_entry(&mut tx_ctx, string!(&bid, "shouldbedeleted"));
+    }
+
+    {
+        expect_get_state_entries_by_prefix(
+            &mut tx_ctx,
+            request.tip,
+            &offer,
+            vec![
+                (
+                    "shouldbedeleted",
+                    protos::Offer {
+                        block: "110".into(),
+                        expiration: 30,
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "shouldnotbedeleted",
+                    protos::Offer {
+                        block: "220".into(),
+                        expiration: 300,
+                        ..Default::default()
+                    },
+                ),
+            ],
+        );
+
+        expect_delete_state_entry(&mut tx_ctx, string!(&offer, "shouldbedeleted"));
+    }
+
+    {
+        expect_get_state_entries_by_prefix(
+            &mut tx_ctx,
+            request.tip,
+            &deal,
+            vec![
+                (
+                    "shouldbedeleted",
+                    protos::DealOrder {
+                        block: "110".into(),
+                        expiration: 30,
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "shouldnotbedeleted",
+                    protos::DealOrder {
+                        block: "220".into(),
+                        expiration: 300,
+                        ..Default::default()
+                    },
+                ),
+            ],
+        );
+
+        expect_delete_state_entry(&mut tx_ctx, string!(&deal, "shouldbedeleted"));
+    }
+
+    {
+        expect_get_state_entries_by_prefix(
+            &mut tx_ctx,
+            request.tip,
+            &repay,
+            vec![
+                (
+                    "shouldbedeleted",
+                    protos::RepaymentOrder {
+                        block: "110".into(),
+                        expiration: 30,
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "shouldnotbedeleted",
+                    protos::RepaymentOrder {
+                        block: "220".into(),
+                        expiration: 300,
+                        ..Default::default()
+                    },
+                ),
+            ],
+        );
+
+        expect_delete_state_entry(&mut tx_ctx, string!(&repay, "shouldbedeleted"));
+    }
+
+    tx_ctx
+        .expect_get_reward_block_signatures()
+        .once()
+        .return_once(|_, _, _| Ok(vec![]));
+
+    expect_set_last_processed_block(&mut tx_ctx, command.block_idx);
+
+    let mut ctx = MockHandlerContext::default();
+    expect!(
+        ctx, sighash -> sighash
+    );
+
+    expect_get_setting(&mut ctx, "sawtooth.gateway.sighash", Some(sighash.as_str()));
+
+    command.execute(&request, &tx_ctx, &mut ctx).unwrap();
+}
+
+#[test]
 fn verify_gateway_signer_returns_ok_when_setting_not_found() {
     let sighash = SigHash::from("sighash");
     let mut ctx = MockHandlerContext::default();
