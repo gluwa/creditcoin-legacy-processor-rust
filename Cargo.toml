@@ -16,7 +16,7 @@ anyhow = "1.0.53"
 chrono = "0.4.19"
 clap = "2.34.0"
 derive_more = "0.99.17"
-enum_dispatch = "0.3.6"
+enum_dispatch = "0.3.8"
 fern = { version = "0.6.0", features = ["colored"] }
 hex = "0.4.3"
 log = "0.4.14"
