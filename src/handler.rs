@@ -2286,7 +2286,7 @@ impl TransactionHandler for CCTransactionHandler {
             "1.5".into(),
             "1.6".into(),
             "1.7".into(),
-            "2.0".into(),
+            "1.8".into(),
         ]
     }
 
