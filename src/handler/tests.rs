@@ -3206,7 +3206,7 @@ fn housekeeping_reward_in_chain() {
         tip: u64::from((CONFIRMATION_COUNT * 2 + BLOCK_REWARD_PROCESSING_COUNT) * 4),
         ..Default::default()
     };
-    request.mut_header().set_family_version("2.0".into());
+    request.mut_header().set_family_version("1.8".into());
     let mut tx_ctx = MockTransactionContext::default();
 
     // get_state_entry should be called on the processed_block_idx address, and we will return
@@ -3291,7 +3291,7 @@ fn housekeeping_reward_fork() {
         block_signature: "headblocksig".into(),
         ..Default::default()
     };
-    request.mut_header().set_family_version("2.0".into());
+    request.mut_header().set_family_version("1.8".into());
     let mut tx_ctx = MockTransactionContext::default();
 
     // get_state_entry should be called on the processed_block_idx address, and we will return
@@ -3393,7 +3393,7 @@ fn housekeeping_not_enough_confirmations() {
         block_signature: "headblocksig".into(),
         ..Default::default()
     };
-    request.mut_header().set_family_version("2.0".into());
+    request.mut_header().set_family_version("1.8".into());
     let mut tx_ctx = MockTransactionContext::default();
 
     expect!(tx_ctx,
@@ -3493,7 +3493,7 @@ fn housekeeping_within_block_reward_count() {
         block_signature: "headblocksig".into(),
         ..Default::default()
     };
-    request.mut_header().set_family_version("2.0".into());
+    request.mut_header().set_family_version("1.8".into());
     let mut tx_ctx = MockTransactionContext::default();
 
     // Housekeeping should check the last processed block, then bail out
@@ -3522,7 +3522,7 @@ fn housekeeping_removes_expired_entries() {
         block_signature: "headblocksig".into(),
         ..Default::default()
     };
-    request.mut_header().set_family_version("2.0".into());
+    request.mut_header().set_family_version("1.8".into());
 
     let mut tx_ctx = MockTransactionContext::default();
 
@@ -3709,7 +3709,7 @@ fn housekeeping_reward_bails_out_if_no_signatures_found() {
         block_signature: "headblocksig".into(),
         ..Default::default()
     };
-    request.mut_header().set_family_version("2.0".into());
+    request.mut_header().set_family_version("1.8".into());
 
     let mut tx_ctx = MockTransactionContext::default();
 
