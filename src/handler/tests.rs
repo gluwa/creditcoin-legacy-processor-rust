@@ -3506,6 +3506,12 @@ fn housekeeping_within_block_reward_count() {
 }
 
 #[test]
+#[ignore]
+// mock needs to return signatures
+// Carlos: This should be an error as preconditions are not satisfied,
+// you can't advance housekeeping without rewarding miners.
+// The test is meant to assert correct state expiration which comes after rewarding.
+// housekeeping fails prematurely and won't do bookkeeping.
 fn housekeeping_removes_expired_entries() {
     init_logs();
 
