@@ -14,7 +14,7 @@ debug = true
 [dependencies]
 anyhow = "1.0.56"
 chrono = "0.4.19"
-clap = "2.34.0"
+clap = "3.1.11"
 derive_more = "0.99.17"
 enum_dispatch = "0.3.8"
 fern = { version = "0.6.0", features = ["colored"] }
